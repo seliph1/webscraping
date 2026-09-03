@@ -1,10 +1,34 @@
+/**
+ * ============================================================================
+ * CONTROLADOR FRONTEND - LINKEDIN PROFILE SCRAPER & PBIX EXPLORER
+ * ============================================================================
+ * Responsabilidades:
+ *  1. Gerenciamento de abas (Perfil Único, Em Lote, Registro de Dados, Explorador de Tabela).
+ *  2. Disparo de requisições de scraping individual e em lote (via SSE Stream).
+ *  3. Feedback visual dinâmico (barra de progresso, lista de itens da fila).
+ *  4. Aba "Registro de Dados": Tabela com filtros, alternância de colunas, download de PDFs
+ *     e links diretos para perfis do LinkedIn.
+ *  5. Aba "Explorador de Tabela": Visualização em grade tabular completa de todos os
+ *     dados reais (todas as 30 colunas e 321 linhas) extraídos de dentro do arquivo .pbix.
+ * ============================================================================
+ */
+
 (function() {
+    // Estado da interface
     let currentMode = 'single';
     let completedItems = 0;
     let allTableRows = [];
     let isModelLoaded = false;
 
-    // Definição das colunas disponíveis para exploração da tabela
+    // Estado do Explorador de Tabela (dados reais do .pbix)
+    let explorerColumns = [];
+    let explorerRows = [];
+    let isExplorerLoaded = false;
+
+    /**
+     * Definição das colunas disponíveis para a aba "Registro de Dados" (dados coletados).
+     * O usuário pode ativar/desativar cada coluna dinamicamente na interface.
+     */
     const availableColumns = [
         { key: 'Nomes', label: 'Nomes', active: true },
         { key: 'Cargo', label: 'Cargo', active: true },
@@ -17,9 +41,13 @@
         { key: 'pdfFile', label: 'Documento PDF', active: true }
     ];
 
+    /**
+     * Extrai um identificador legível e limpo a partir de uma URL do LinkedIn
+     * para exibição resumida na lista em tempo real do processamento em lote.
+     */
     function getCleanIdentifier(rawUrl) {
         if (!rawUrl) return '';
-        let clean = rawUrl.trim().split('?')[0].split('#')[0].replace(/\+$/, '');
+        let clean = rawUrl.trim().split('?')[0].split('#')[0].replace(/\/+$/, '');
         if (clean.includes('/in/')) {
             const parts = clean.split('/in/');
             clean = parts[parts.length - 1];
@@ -33,28 +61,44 @@
         return clean || rawUrl;
     }
 
+    /**
+     * Alterna a visualização entre as abas da aplicação:
+     *  - 'single': Scraping de perfil único
+     *  - 'batch': Scraping em lote com progresso SSE
+     *  - 'pbix': Registro de Dados coletados
+     *  - 'explorer': Explorador de Tabela do arquivo .pbix
+     * 
+     * @param {string} mode - Identificador da aba
+     */
     window.switchTab = function(mode) {
         currentMode = mode;
 
         const tabSingle = document.getElementById('tab-single');
         const tabBatch = document.getElementById('tab-batch');
         const tabPbix = document.getElementById('tab-pbix');
+        const tabExplorer = document.getElementById('tab-explorer');
+
         const singleView = document.getElementById('single-view');
         const batchView = document.getElementById('batch-view');
         const pbixView = document.getElementById('pbix-view');
+        const explorerView = document.getElementById('explorer-view');
         const form = document.getElementById('scrape-form');
 
-        [tabSingle, tabBatch, tabPbix].forEach(function(t) {
+        // Remove estado ativo de todos os botões de aba
+        [tabSingle, tabBatch, tabPbix, tabExplorer].forEach(function(t) {
             if (t) {
                 t.classList.remove('active');
                 t.setAttribute('aria-selected', 'false');
             }
         });
 
+        // Oculta todas as telas
         if (singleView) singleView.classList.add('hidden');
         if (batchView) batchView.classList.add('hidden');
         if (pbixView) pbixView.classList.add('hidden');
+        if (explorerView) explorerView.classList.add('hidden');
 
+        // Ativa a tela selecionada
         if (mode === 'single') {
             if (tabSingle) { tabSingle.classList.add('active'); tabSingle.setAttribute('aria-selected', 'true'); }
             if (form) form.classList.remove('hidden');
@@ -74,11 +118,23 @@
             if (!isModelLoaded) {
                 loadSemanticModel();
             }
+        } else if (mode === 'explorer') {
+            if (tabExplorer) { tabExplorer.classList.add('active'); tabExplorer.setAttribute('aria-selected', 'true'); }
+            if (form) form.classList.add('hidden');
+            if (explorerView) explorerView.classList.remove('hidden');
+            if (!isExplorerLoaded) {
+                loadTableExplorer();
+            }
+            // Sempre sincroniza com o arquivo mais recente no disco
+            loadTableExplorer(true);
         }
 
         hideAllStates();
     };
 
+    /**
+     * Oculta os estados intermediários (loading, sucesso, erro, progresso).
+     */
     function hideAllStates() {
         const elements = ['loading-state', 'progress-state', 'success-state', 'error-state'];
         elements.forEach(function(id) {
@@ -89,6 +145,9 @@
         if (tabs) tabs.classList.remove('hidden');
     }
 
+    /**
+     * Reseta o formulário de perfil único para novo scraping.
+     */
     window.resetSingle = function() {
         hideAllStates();
         const form = document.getElementById('scrape-form');
@@ -97,6 +156,9 @@
         if (urlInput) { urlInput.value = ''; urlInput.focus(); }
     };
 
+    /**
+     * Reseta o formulário em lote para novo lote de perfis.
+     */
     window.resetBatch = function() {
         hideAllStates();
         const form = document.getElementById('scrape-form');
@@ -108,10 +170,14 @@
         if (urlsTextarea) { urlsTextarea.value = ''; urlsTextarea.focus(); }
     };
 
-    // ==========================================
-    // Semantic Model & Table Explorer Functions
-    // ==========================================
+    // ========================================================================
+    // ABA: REGISTRO DE DADOS (DADOS COLETADOS VIA SCRAPING)
+    // ========================================================================
 
+    /**
+     * Carrega os dados coletados do backend e os metadados do arquivo .pbix.
+     * @param {boolean} [force] - Se verdadeiro, força a recarga ignorando cache
+     */
     window.loadSemanticModel = async function(force) {
         if (force) isModelLoaded = false;
 
@@ -149,7 +215,6 @@
                 currentTableTitle.textContent = tableData.table || 'BASE BI';
             }
 
-            // Atualiza cabeçalho do arquivo
             if (fileNameEl) fileNameEl.textContent = model.fileName;
             if (filePathEl) filePathEl.innerHTML = 'Caminho configurado: <code>' + model.filePath + '</code> (' + (model.fileSizeFormatted || '-') + ')';
 
@@ -163,7 +228,6 @@
                 }
             }
 
-            // Atualiza estatísticas
             const statPeople = document.getElementById('stat-people-count');
             const statTables = document.getElementById('stat-tables-count');
             const statCols = document.getElementById('stat-columns-count');
@@ -174,17 +238,12 @@
             if (statCols) statCols.textContent = model.columnsCount || 0;
             if (statPages) statPages.textContent = model.sectionsCount || 0;
 
-            // Renderiza os seletores de colunas
             renderColumnToggles();
-
-            // Renderiza tabela completa
             renderTableData(allTableRows);
-
-            // Renderiza detalhes estruturais do modelo
             renderModelDetails(model);
 
         } catch (err) {
-            console.error('Erro ao carregar explorador do PBIX:', err);
+            console.error('Erro ao carregar dados do registro:', err);
             if (statusBadge) {
                 statusBadge.className = 'status-badge error-badge';
                 statusBadge.textContent = '! Erro ao carregar';
@@ -195,6 +254,9 @@
         }
     };
 
+    /**
+     * Renderiza os botões tipo chip para alternar visibilidade de colunas.
+     */
     function renderColumnToggles() {
         const container = document.getElementById('column-toggles-container');
         if (!container) return;
@@ -209,6 +271,10 @@
         container.innerHTML = html;
     }
 
+    /**
+     * Alterna o estado ativo/inativo de uma coluna específica e re-renderiza a tabela.
+     * @param {number} index - Índice da coluna no array availableColumns
+     */
     window.toggleColumn = function(index) {
         if (availableColumns[index]) {
             availableColumns[index].active = !availableColumns[index].active;
@@ -217,6 +283,10 @@
         }
     };
 
+    /**
+     * Renderiza as linhas e cabeçalhos ativos na tabela da aba Registro de Dados.
+     * @param {Array<Object>} rows - Lista de linhas a exibir
+     */
     function renderTableData(rows) {
         const thead = document.getElementById('people-table-head');
         const tbody = document.getElementById('people-table-body');
@@ -225,7 +295,6 @@
 
         const activeCols = availableColumns.filter(function(c) { return c.active; });
 
-        // Monta o thead dinâmico
         let theadHtml = '<tr>';
         activeCols.forEach(function(col) {
             const centerStyle = (col.key === 'pdfFile' || col.key === 'STATUS') ? ' style="text-align: center;"' : '';
@@ -234,14 +303,12 @@
         theadHtml += '</tr>';
         thead.innerHTML = theadHtml;
 
-        // Se não houver dados
         if (!rows || rows.length === 0) {
             tbody.innerHTML = '<tr><td colspan="' + Math.max(1, activeCols.length) + '" style="text-align: center; color: var(--text-muted); padding: 2rem;">Nenhum registro encontrado com os filtros atuais.</td></tr>';
             if (counter) counter.textContent = 'Exibindo 0 de ' + allTableRows.length + ' registros | ' + activeCols.length + ' colunas ativas';
             return;
         }
 
-        // Monta as linhas da tabela
         let tbodyHtml = '';
         rows.forEach(function(r) {
             tbodyHtml += '<tr>';
@@ -262,8 +329,9 @@
                 } else if (key === 'STATUS') {
                     tbodyHtml += '<td style="text-align: center;"><span class="status-pill">' + escapeHtml(r['STATUS'] || 'Analisado') + '</span></td>';
                 } else if (key === 'url') {
+                    let displayUrl = r.url ? r.url.replace(/^https?:\/\/(?:www\.)?/, 'www.') : '';
                     const link = r.url ?
-                        '<a href="' + r.url + '" class="table-link" target="_blank" rel="noopener noreferrer">Acessar ↗</a>' :
+                        '<a href="' + escapeHtml(r.url) + '" class="table-link table-link-url" target="_blank" rel="noopener noreferrer" title="' + escapeHtml(r.url) + '">' + escapeHtml(displayUrl) + ' ↗</a>' :
                         '<span class="text-muted">-</span>';
                     tbodyHtml += '<td>' + link + '</td>';
                 } else if (key === 'pdfFile') {
@@ -284,6 +352,9 @@
         }
     }
 
+    /**
+     * Filtra a tabela de pessoas em tempo real a partir do campo de busca.
+     */
     window.filterPeopleTable = function() {
         const input = document.getElementById('people-search-input');
         if (!input) return;
@@ -303,6 +374,9 @@
         renderTableData(filtered);
     };
 
+    /**
+     * Renderiza as informações complementares do modelo (tabelas e páginas visuais).
+     */
     function renderModelDetails(model) {
         const tablesContainer = document.getElementById('model-tables-container');
         const sectionsContainer = document.getElementById('model-sections-container');
@@ -347,6 +421,140 @@
         }
     }
 
+    // ========================================================================
+    // ABA: EXPLORADOR DE TABELA (DADOS REAIS DO ARQUIVO .PBIX)
+    // ========================================================================
+
+    /**
+     * Carrega a tabela real contida diretamente dentro do .pbix
+     * decodificada pelo endpoint /api/pbix/real-table (VertiPaq/XPress9).
+     * @param {boolean} [force] - Se verdadeiro, força a recarga do backend
+     */
+    window.loadTableExplorer = async function(force) {
+        if (force) isExplorerLoaded = false;
+
+        const tableBadge = document.getElementById('smeTableBadge');
+        const activeTableName = document.getElementById('smeActiveTableName');
+        const rowBadge = document.getElementById('smeRowBadge');
+        const tbody = document.getElementById('smeGridTbody');
+        const footer = document.getElementById('smeStatusFooter');
+
+        if (rowBadge) rowBadge.textContent = 'Carregando dados do .pbix...';
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="15" style="text-align: center; color: var(--text-muted); padding: 2rem;">Carregando todas as linhas e cabeçalhos do arquivo .pbix...</td></tr>';
+        }
+
+        try {
+            const res = await fetch('/api/pbix/real-table');
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error || 'Falha ao extrair tabela real do .pbix.');
+
+            explorerColumns = data.columns || [];
+            explorerRows = data.rows || [];
+            isExplorerLoaded = true;
+
+            const tableName = data.table || 'BASE BI';
+            if (activeTableName) activeTableName.textContent = tableName;
+            if (tableBadge) tableBadge.textContent = explorerRows.length;
+            if (rowBadge) rowBadge.textContent = explorerRows.length + ' linhas • ' + explorerColumns.length + ' cabeçalhos';
+            if (footer) footer.textContent = 'Tabela ' + tableName + ' contendo ' + explorerRows.length + ' linhas e ' + explorerColumns.length + ' cabeçalhos carregados diretamente do arquivo .pbix.';
+
+            renderExplorerGrid(explorerRows);
+
+        } catch (err) {
+            console.error('Erro no Explorador de Tabela:', err);
+            if (tbody) {
+                tbody.innerHTML = '<tr><td colspan="15" style="text-align: center; color: #DC2626; padding: 2rem;">' + (err.message || 'Erro ao carregar tabela do .pbix.') + '</td></tr>';
+            }
+            if (rowBadge) rowBadge.textContent = 'Erro';
+        }
+    };
+
+    /**
+     * Renderiza a grade de dados do Explorador de Tabela contendo dinamicamente
+     * todos os cabeçalhos (30 colunas) e todas as linhas (321 registros).
+     * @param {Array<Object>} rows - Linhas a serem renderizadas
+     */
+    function renderExplorerGrid(rows) {
+        const thead = document.getElementById('smeGridThead');
+        const tbody = document.getElementById('smeGridTbody');
+        const footer = document.getElementById('smeStatusFooter');
+        if (!thead || !tbody) return;
+
+        // Monta os cabeçalhos dinâmicos com TODAS as colunas encontradas no .pbix
+        let theadHtml = '<tr><th style="width: 45px; text-align: center;">#</th>';
+        explorerColumns.forEach(function(col) {
+            theadHtml += '<th>' + escapeHtml(col) + '</th>';
+        });
+        theadHtml += '</tr>';
+        thead.innerHTML = theadHtml;
+
+        if (!rows || rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="' + (explorerColumns.length + 1) + '" style="text-align: center; color: var(--text-muted); padding: 2rem;">Nenhuma linha encontrada para o filtro.</td></tr>';
+            if (footer) footer.textContent = 'Exibindo 0 de ' + explorerRows.length + ' linhas';
+            return;
+        }
+
+        let html = '';
+        rows.forEach(function(r, idx) {
+            html += '<tr><td class="sme-cell-idx">' + (idx + 1) + '</td>';
+            explorerColumns.forEach(function(col) {
+                const val = r[col];
+                if (val === null || val === undefined || val === '') {
+                    html += '<td class="text-muted">-</td>';
+                } else if (col === 'Nomes') {
+                    html += '<td class="sme-cell-name">' + escapeHtml(val) + '</td>';
+                } else if (col === 'LinkedIn' && typeof val === 'string' && val.includes('linkedin.com')) {
+                    let url = val.trim();
+                    if (!url.startsWith('http')) url = 'https://' + url;
+                    html += '<td><a href="' + escapeHtml(url) + '" class="table-link" target="_blank" rel="noopener noreferrer">Acessar Perfil ↗</a></td>';
+                } else if (col === 'STATUS') {
+                    html += '<td style="text-align: center;"><span class="sme-badge-status">' + escapeHtml(val) + '</span></td>';
+                } else {
+                    html += '<td>' + escapeHtml(val) + '</td>';
+                }
+            });
+            html += '</tr>';
+        });
+
+        tbody.innerHTML = html;
+        if (footer) {
+            footer.textContent = 'Exibindo ' + rows.length + ' de ' + explorerRows.length + ' linhas da tabela BASE BI (' + explorerColumns.length + ' cabeçalhos extraídos do .pbix)';
+        }
+    }
+
+    /**
+     * Filtra a tabela do explorador em tempo real por qualquer texto presente em qualquer coluna.
+     */
+    window.filterExplorerTable = function() {
+        const input = document.getElementById('smeFilterInput');
+        if (!input) return;
+        const q = input.value.trim().toLowerCase();
+        if (!q) {
+            renderExplorerGrid(explorerRows);
+            return;
+        }
+
+        const filtered = explorerRows.filter(function(r) {
+            return explorerColumns.some(function(col) {
+                const val = r[col];
+                return val && String(val).toLowerCase().includes(q);
+            });
+        });
+
+        renderExplorerGrid(filtered);
+    };
+
+    /**
+     * Permite selecionar uma tabela na barra lateral do explorador.
+     */
+    window.selectExplorerTable = function(tableName) {
+        loadTableExplorer(true);
+    };
+
+    /**
+     * Função auxiliar de escape HTML para proteção contra injeção de código (XSS).
+     */
     function escapeHtml(str) {
         if (!str) return '';
         return String(str)
@@ -356,9 +564,9 @@
             .replace(/"/g, '&quot;');
     }
 
-    // ==========================================
-    // Scraping Handlers (Single & Batch)
-    // ==========================================
+    // ========================================================================
+    // PROCESSAMENTO DE FORMULÁRIO (SCRAPING ÚNICO E EM LOTE)
+    // ========================================================================
 
     document.addEventListener('DOMContentLoaded', function() {
         const form = document.getElementById('scrape-form');
@@ -373,6 +581,9 @@
         });
     });
 
+    /**
+     * Executa a requisição de scraping para um único perfil.
+     */
     async function handleSingleScrape() {
         const urlInput = document.getElementById('url');
         const form = document.getElementById('scrape-form');
@@ -424,6 +635,9 @@
         }
     }
 
+    /**
+     * Executa o processamento em lote com streaming de eventos SSE em tempo real.
+     */
     async function handleBatchScrapeStream() {
         const urlsTextarea = document.getElementById('urls');
         const form = document.getElementById('scrape-form');
@@ -520,6 +734,9 @@
         }
     }
 
+    /**
+     * Manipula cada evento individual transmitido pelo backend via SSE.
+     */
     function handleStreamEvent(event, total) {
         if (event.type === 'progress') {
             const index = event.index;
@@ -572,11 +789,17 @@
         }
     }
 
+    /**
+     * Incrementa o contador de progresso de perfis processados.
+     */
     function updateProgressCounter(total) {
         completedItems++;
         updateProgressBar(completedItems, total);
     }
 
+    /**
+     * Atualiza os elementos da barra de progresso e porcentagem na interface.
+     */
     function updateProgressBar(completed, total) {
         const progressCount = document.getElementById('progress-count');
         const progressPercent = document.getElementById('progress-percent');

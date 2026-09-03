@@ -571,6 +571,9 @@ input[type="url"]::placeholder, textarea::placeholder {
     padding: 1rem 1.25rem;
     margin-bottom: 1.5rem;
     gap: 1rem;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    gap: 0.75rem;
     flex-wrap: wrap;
 }
 
@@ -588,14 +591,17 @@ input[type="url"]::placeholder, textarea::placeholder {
 
 .pbix-file-name {
     font-size: 1.15rem;
+    font-size: 1.1rem;
     font-weight: 700;
     color: var(--cefet-blue);
 }
 
 .pbix-file-path {
     font-size: 0.8rem;
+    font-size: 0.775rem;
     color: var(--text-muted);
     margin-top: 0.35rem;
+    margin-top: 0.25rem;
     word-break: break-all;
 }
 
@@ -611,6 +617,8 @@ input[type="url"]::placeholder, textarea::placeholder {
 .btn-sm {
     padding: 0.45rem 0.9rem;
     font-size: 0.825rem;
+    padding: 0.35rem 0.75rem;
+    font-size: 0.8rem;
 }
 
 .pbix-stats-grid {
@@ -618,6 +626,9 @@ input[type="url"]::placeholder, textarea::placeholder {
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 1rem;
     margin-bottom: 1.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1rem;
 }
 
 .stat-card {
@@ -625,6 +636,7 @@ input[type="url"]::placeholder, textarea::placeholder {
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     padding: 1.15rem 1rem;
+    padding: 0.65rem 0.85rem;
     text-align: center;
     box-shadow: var(--shadow-sm);
     transition: transform 0.15s ease, box-shadow 0.15s ease;
@@ -637,6 +649,7 @@ input[type="url"]::placeholder, textarea::placeholder {
 
 .stat-value {
     font-size: 1.75rem;
+    font-size: 1.45rem;
     font-weight: 800;
     color: var(--cefet-blue);
     line-height: 1.2;
@@ -644,10 +657,12 @@ input[type="url"]::placeholder, textarea::placeholder {
 
 .stat-label {
     font-size: 0.75rem;
+    font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--text-muted);
     margin-top: 0.35rem;
+    margin-top: 0.2rem;
     font-weight: 600;
 }
 
@@ -656,6 +671,7 @@ input[type="url"]::placeholder, textarea::placeholder {
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     padding: 1.25rem;
+    padding: 0.9rem 1rem;
     box-shadow: var(--shadow-sm);
 }
 
@@ -666,26 +682,34 @@ input[type="url"]::placeholder, textarea::placeholder {
     flex-wrap: wrap;
     gap: 1rem;
     margin-bottom: 1.25rem;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
 }
 
 .section-card-header h3 {
     color: var(--cefet-blue);
     font-size: 1.15rem;
+    font-size: 1.05rem;
     font-weight: 700;
 }
 
 .section-subtext {
     font-size: 0.825rem;
+    font-size: 0.8rem;
     color: var(--text-muted);
     margin-top: 0.2rem;
+    margin-top: 0.15rem;
 }
 
 .search-box input {
     padding: 0.55rem 0.95rem;
+    padding: 0.45rem 0.8rem;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     font-size: 0.85rem;
     width: 250px;
+    font-size: 0.825rem;
+    width: 240px;
     background-color: #FFFFFF;
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
@@ -698,6 +722,8 @@ input[type="url"]::placeholder, textarea::placeholder {
 
 .table-responsive {
     overflow-x: auto;
+    overflow-y: auto;
+    max-height: 420px;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     background-color: #FFFFFF;
@@ -707,20 +733,26 @@ input[type="url"]::placeholder, textarea::placeholder {
     width: 100%;
     border-collapse: collapse;
     font-size: 0.875rem;
+    font-size: 0.825rem;
     text-align: left;
 }
 
 .data-table th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
     background-color: #F8FAFC;
     color: var(--text-main);
     font-weight: 700;
     padding: 0.75rem 1rem;
+    padding: 0.5rem 0.75rem;
     border-bottom: 2px solid var(--border-color);
     white-space: nowrap;
 }
 
 .data-table td {
     padding: 0.8rem 1rem;
+    padding: 0.45rem 0.75rem;
     border-bottom: 1px solid var(--border-color);
     vertical-align: middle;
 }
@@ -736,13 +768,16 @@ input[type="url"]::placeholder, textarea::placeholder {
 .person-name {
     color: var(--cefet-blue);
     font-weight: 700;
+    font-size: 0.85rem;
 }
 
 .person-headline {
     font-size: 0.825rem;
+    font-size: 0.775rem;
     color: var(--text-muted);
     max-width: 280px;
     line-height: 1.35;
+    line-height: 1.3;
 }
 
 .table-link {
@@ -750,6 +785,7 @@ input[type="url"]::placeholder, textarea::placeholder {
     font-weight: 600;
     text-decoration: none;
     font-size: 0.825rem;
+    font-size: 0.8rem;
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
@@ -760,15 +796,25 @@ input[type="url"]::placeholder, textarea::placeholder {
     color: var(--cefet-blue-hover);
 }
 
+.table-link-url {
+    max-width: 250px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .table-action-btn {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
     padding: 0.35rem 0.75rem;
+    gap: 0.3rem;
+    padding: 0.25rem 0.6rem;
     background-color: var(--cefet-blue-light);
     color: var(--cefet-blue);
     border-radius: 4px;
     font-size: 0.8rem;
+    font-size: 0.75rem;
     font-weight: 600;
     text-decoration: none;
     border: 1px solid rgba(0, 60, 113, 0.15);
@@ -782,9 +828,11 @@ input[type="url"]::placeholder, textarea::placeholder {
 
 .table-footer-info {
     font-size: 0.8rem;
+    font-size: 0.775rem;
     color: var(--text-muted);
     text-align: right;
     margin-top: 0.65rem;
+    margin-top: 0.45rem;
 }
 
 .model-details-grid {
@@ -914,8 +962,11 @@ input[type="url"]::placeholder, textarea::placeholder {
     align-items: center;
     gap: 0.75rem;
     margin-bottom: 1rem;
+    gap: 0.6rem;
+    margin-bottom: 0.75rem;
     flex-wrap: wrap;
     padding: 0.65rem 0.85rem;
+    padding: 0.45rem 0.75rem;
     background-color: #F8FAFC;
     border-radius: var(--radius-sm);
     border: 1px solid var(--border-color);
@@ -923,6 +974,7 @@ input[type="url"]::placeholder, textarea::placeholder {
 
 .column-bar-label {
     font-size: 0.75rem;
+    font-size: 0.72rem;
     font-weight: 700;
     color: var(--text-muted);
     text-transform: uppercase;
@@ -934,6 +986,7 @@ input[type="url"]::placeholder, textarea::placeholder {
     display: flex;
     flex-wrap: wrap;
     gap: 0.35rem;
+    gap: 0.3rem;
 }
 
 .col-toggle-btn {
@@ -942,6 +995,8 @@ input[type="url"]::placeholder, textarea::placeholder {
     border-radius: 20px;
     padding: 0.25rem 0.65rem;
     font-size: 0.75rem;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.725rem;
     font-weight: 600;
     color: var(--text-muted);
     cursor: pointer;
@@ -965,8 +1020,10 @@ input[type="url"]::placeholder, textarea::placeholder {
     background-color: #F1F5F9;
     color: var(--text-main);
     padding: 0.2rem 0.55rem;
+    padding: 0.15rem 0.45rem;
     border-radius: 4px;
     font-size: 0.8rem;
+    font-size: 0.775rem;
     font-weight: 500;
     max-width: 220px;
     overflow: hidden;
@@ -979,8 +1036,10 @@ input[type="url"]::placeholder, textarea::placeholder {
     background-color: #EFF6FF;
     color: #1D4ED8;
     padding: 0.2rem 0.55rem;
+    padding: 0.15rem 0.45rem;
     border-radius: 4px;
     font-size: 0.775rem;
+    font-size: 0.75rem;
     font-weight: 600;
     white-space: nowrap;
 }
@@ -990,7 +1049,234 @@ input[type="url"]::placeholder, textarea::placeholder {
     background-color: #ECFDF5;
     color: #059669;
     padding: 0.2rem 0.6rem;
+    padding: 0.15rem 0.5rem;
     border-radius: 12px;
     font-size: 0.75rem;
+    font-size: 0.725rem;
     font-weight: 600;
+}
+
+/* ========================================================
+   Aba Explorador de Tabela (Estilo Semantic Model Explorer)
+   ======================================================== */
+
+.sme-wrapper {
+    display: flex;
+    background-color: #FFFFFF;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    min-height: 480px;
+    box-shadow: var(--shadow-sm);
+}
+
+.sme-sidebar {
+    width: 200px;
+    min-width: 170px;
+    background-color: #F8FAFC;
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+}
+
+.sme-sidebar-header {
+    padding: 10px 14px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-color);
+    background-color: #F1F5F9;
+}
+
+.sme-table-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+}
+
+.sme-table-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 4px;
+    font-size: 0.825rem;
+    font-weight: 600;
+    color: var(--text-main);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+}
+
+.sme-table-item:hover {
+    background-color: #EDF2F7;
+}
+
+.sme-table-item.active {
+    background-color: var(--cefet-blue-light);
+    color: var(--cefet-blue);
+    border: 1px solid rgba(0, 60, 113, 0.2);
+}
+
+.sme-table-icon {
+    font-size: 1rem;
+}
+
+.sme-table-name-label {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sme-table-badge {
+    background-color: #E2E8F0;
+    color: #475569;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 10px;
+}
+
+.sme-table-item.active .sme-table-badge {
+    background-color: var(--cefet-blue);
+    color: #FFFFFF;
+}
+
+.sme-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background-color: #FFFFFF;
+}
+
+.sme-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border-color);
+    background-color: #F8FAFC;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.sme-toolbar-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.sme-current-table {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--cefet-blue);
+}
+
+.sme-row-badge {
+    font-size: 0.775rem;
+    color: var(--text-muted);
+}
+
+.sme-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sme-filter-input {
+    padding: 5px 10px;
+    font-size: 0.8rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    width: 200px;
+    background-color: #FFFFFF;
+}
+
+.sme-filter-input:focus {
+    outline: none;
+    border-color: var(--cefet-blue);
+}
+
+.sme-grid-container {
+    flex: 1;
+    overflow: auto;
+    max-height: 440px;
+    min-height: 300px;
+}
+
+.sme-data-grid {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+    text-align: left;
+}
+
+.sme-data-grid th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background-color: #F1F5F9;
+    color: var(--text-main);
+    font-weight: 700;
+    padding: 7px 10px;
+    border-bottom: 2px solid var(--border-color);
+    white-space: nowrap;
+}
+
+.sme-data-grid td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+}
+
+.sme-data-grid tbody tr:hover td {
+    background-color: #F8FAFC;
+}
+
+.sme-cell-idx {
+    color: var(--text-muted);
+    text-align: center;
+    font-size: 0.725rem;
+}
+
+.sme-cell-name {
+    font-weight: 700;
+    color: var(--cefet-blue);
+}
+
+.sme-badge-status {
+    display: inline-block;
+    background-color: #ECFDF5;
+    color: #059669;
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: 0.725rem;
+    font-weight: 600;
+}
+
+.sme-status-footer {
+    padding: 7px 14px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    border-top: 1px solid var(--border-color);
+    background-color: #F8FAFC;
+}
+
+@media (max-width: 768px) {
+    .sme-wrapper {
+        flex-direction: column;
+    }
+    .sme-sidebar {
+        width: 100%;
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+    }
 }

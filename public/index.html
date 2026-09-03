@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LinkedIn Scraper - CEFET-MG</title>
     <meta name="description" content="Extrator de perfis do LinkedIn em PDF e JSON seguindo a identidade visual do CEFET-MG.">
-    <link rel="stylesheet" href="style.css?v=8">
+    <link rel="stylesheet" href="style.css?v=9">
+    <link rel="stylesheet" href="style.css?v=10">
+    <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
     <header class="main-header">
@@ -21,7 +23,8 @@
             <div class="tabs" role="tablist">
                 <button type="button" id="tab-single" class="tab-btn active" data-target="single" role="tab" aria-selected="true" onclick="switchTab('single')">Perfil Único</button>
                 <button type="button" id="tab-batch" class="tab-btn" data-target="batch" role="tab" aria-selected="false" onclick="switchTab('batch')">Em Lote (Batch)</button>
-                <button type="button" id="tab-pbix" class="tab-btn" data-target="pbix" role="tab" aria-selected="false" onclick="switchTab('pbix')">Modelo Semântico (.pbix)</button>
+                <button type="button" id="tab-pbix" class="tab-btn" data-target="pbix" role="tab" aria-selected="false" onclick="switchTab('pbix')">Registro de Dados</button>
+                <button type="button" id="tab-explorer" class="tab-btn" data-target="explorer" role="tab" aria-selected="false" onclick="switchTab('explorer')">Explorador de Tabela</button>
             </div>
 
             <form id="scrape-form">
@@ -48,7 +51,7 @@
                 </button>
             </form>
 
-            <!-- PBIX / Semantic Model & Table Explorer Mode -->
+            <!-- Registro de Dados Mode (Aba original mantida intacta) -->
             <div id="pbix-view" class="view-content hidden">
                 <div class="pbix-header-card">
                     <div class="pbix-header-info">
@@ -155,6 +158,66 @@
                 </div>
             </div>
 
+            <!-- Nova Aba: Explorador de Tabela (Inspirada no Semantic Model Explorer) -->
+            <div id="explorer-view" class="view-content hidden">
+                <div class="sme-wrapper">
+                    <div class="sme-sidebar">
+                        <div class="sme-sidebar-header">Tabelas do Modelo</div>
+                        <div class="sme-table-list" id="smeTableList">
+                            <div class="sme-table-item active" onclick="selectExplorerTable('BASE BI')">
+                                <span class="sme-table-icon">📊</span>
+                                <span class="sme-table-name-label">BASE BI</span>
+                                <span class="sme-table-badge" id="smeTableBadge">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="sme-main">
+                        <div class="sme-toolbar">
+                            <div class="sme-toolbar-info">
+                                <span class="sme-current-table" id="smeActiveTableName">BASE BI</span>
+                                <span class="sme-row-badge" id="smeRowBadge">Carregando...</span>
+                            </div>
+                            <div class="sme-toolbar-actions">
+                                <input type="text" id="smeFilterInput" class="sme-filter-input" placeholder="Filtrar dados..." oninput="filterExplorerTable()">
+                                <button type="button" class="secondary-btn btn-sm" onclick="loadTableExplorer(true)" title="Recarregar dados do arquivo .pbix" style="cursor: pointer;">
+                                    <span>🔄 Atualizar</span>
+                                </button>
+                                <a href="/api/pbix/export-real-csv" class="secondary-btn btn-sm" download="BASE_BI.csv" style="text-decoration: none;">
+                                    <span>Exportar CSV</span>
+                                </a>
+                            </div>
+                        </div>
+
+                        <div class="sme-grid-container">
+                            <table class="sme-data-grid" id="smeDataGrid">
+                                <thead id="smeGridThead">
+                                    <tr>
+                                        <th style="width: 45px; text-align: center;">#</th>
+                                        <th>Nomes</th>
+                                        <th>Cargo</th>
+                                        <th>Empresa</th>
+                                        <th>Área</th>
+                                        <th>Região (Cidade)</th>
+                                        <th>Coleta de Dados</th>
+                                        <th>STATUS</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="smeGridTbody">
+                                    <tr>
+                                        <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">Carregando tabela do modelo...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="sme-status-footer" id="smeStatusFooter">
+                            Visualização da tabela BASE BI
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Loading State (Single Mode) -->
             <div id="loading-state" class="hidden">
                 <div class="spinner"></div>
@@ -221,6 +284,6 @@
         </div>
     </footer>
 
-    <script src="app.js?v=8"></script>
+    <script src="app.js?v=12"></script>
 </body>
 </html>
