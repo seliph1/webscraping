@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LinkedIn Scraper - CEFET-MG</title>
+    <meta name="description" content="Extrator de perfis do LinkedIn em PDF e JSON seguindo a identidade visual do CEFET-MG.">
+    <link rel="stylesheet" href="style.css?v=8">
+</head>
+<body>
+    <header class="main-header">
+        <div class="header-top-bar"></div>
+        <div class="header-content">
+            <h1>LinkedIn Profile Scraper</h1>
+            <p class="subtitle">Extração estruturada de perfis profissionais em PDF e JSON</p>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="card-panel">
+            <div class="tabs" role="tablist">
+                <button type="button" id="tab-single" class="tab-btn active" data-target="single" role="tab" aria-selected="true" onclick="switchTab('single')">Perfil Único</button>
+                <button type="button" id="tab-batch" class="tab-btn" data-target="batch" role="tab" aria-selected="false" onclick="switchTab('batch')">Em Lote (Batch)</button>
+                <button type="button" id="tab-pbix" class="tab-btn" data-target="pbix" role="tab" aria-selected="false" onclick="switchTab('pbix')">Modelo Semântico (.pbix)</button>
+            </div>
+
+            <form id="scrape-form">
+                <!-- Single Mode -->
+                <div id="single-view" class="view-content">
+                    <div class="input-group">
+                        <label for="url">URL do Perfil do LinkedIn</label>
+                        <input type="text" id="url" name="url" placeholder="https://www.linkedin.com/in/nome-do-perfil/" autocomplete="off">
+                        <span class="helper-text">Insira o link ou nome de usuário do perfil desejado.</span>
+                    </div>
+                </div>
+
+                <!-- Batch Mode -->
+                <div id="batch-view" class="view-content hidden">
+                    <div class="input-group">
+                        <label for="urls">URLs dos Perfis (uma por linha)</label>
+                        <textarea id="urls" rows="6" placeholder="https://www.linkedin.com/in/perfil1/&#10;https://www.linkedin.com/in/perfil2/&#10;https://www.linkedin.com/in/perfil3/"></textarea>
+                        <span class="helper-text">Cole múltiplos links ou identificadores. Parâmetros de rastreamento serão sanitizados automaticamente.</span>
+                    </div>
+                </div>
+
+                <button type="submit" id="submit-btn" class="primary-btn">
+                    <span class="btn-text">Iniciar Scraping</span>
+                </button>
+            </form>
+
+            <!-- PBIX / Semantic Model & Table Explorer Mode -->
+            <div id="pbix-view" class="view-content hidden">
+                <div class="pbix-header-card">
+                    <div class="pbix-header-info">
+                        <div class="pbix-title-row">
+                            <span class="status-badge success-badge" id="pbix-status-badge">Carregando...</span>
+                            <span class="pbix-file-name" id="pbix-file-name">egressos.pbix</span>
+                        </div>
+                        <p class="pbix-file-path" id="pbix-file-path">Caminho: <code>-</code></p>
+                    </div>
+                    <div class="pbix-header-actions">
+                        <button type="button" class="secondary-btn btn-sm" onclick="loadSemanticModel(true)">
+                            <span>↻ Atualizar</span>
+                        </button>
+                        <a href="/api/pbix/export-csv" class="primary-btn btn-sm" download="perfis_powerbi.csv" style="text-decoration: none;">
+                            <span>📥 Exportar CSV</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Metrics Grid -->
+                <div class="pbix-stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-people-count">-</div>
+                        <div class="stat-label">Registros na Tabela</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-tables-count">-</div>
+                        <div class="stat-label">Tabelas no Modelo</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-columns-count">-</div>
+                        <div class="stat-label">Cabeçalhos / Campos</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-pages-count">-</div>
+                        <div class="stat-label">Páginas do Relatório</div>
+                    </div>
+                </div>
+
+                <!-- Table Explorer Section -->
+                <div class="pbix-section-card">
+                    <div class="section-card-header">
+                        <div>
+                            <div class="table-title-badge-row">
+                                <span class="table-badge">Tabela</span>
+                                <h3 id="current-table-title">BASE BI</h3>
+                            </div>
+                            <p class="section-subtext">Exploração dos registros de dados e mapeamento dos cabeçalhos do Power BI</p>
+                        </div>
+                        <div class="search-box">
+                            <input type="text" id="people-search-input" placeholder="Buscar por nome, cargo, empresa..." oninput="filterPeopleTable()">
+                        </div>
+                    </div>
+
+                    <!-- Column Selector / Toggles -->
+                    <div class="column-visibility-bar">
+                        <span class="column-bar-label">Colunas visíveis:</span>
+                        <div id="column-toggles-container" class="column-toggles-list">
+                            <!-- Inserido dinamicamente via JS -->
+                        </div>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="data-table" id="people-table">
+                            <thead id="people-table-head">
+                                <!-- Cabeçalhos dinâmicos inseridos via JS -->
+                            </thead>
+                            <tbody id="people-table-body">
+                                <tr>
+                                    <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">Carregando dados da tabela...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="table-footer-info">
+                        <span id="people-counter-text">Exibindo 0 registros</span>
+                    </div>
+                </div>
+
+                <!-- Semantic Model Structure -->
+                <div class="pbix-section-card" style="margin-top: 1.5rem;">
+                    <div class="section-card-header">
+                        <div>
+                            <h3>Estrutura do Modelo Semântico</h3>
+                            <p class="section-subtext">Todos os campos identificados no modelo e páginas do relatório Power BI</p>
+                        </div>
+                    </div>
+
+                    <div class="model-details-grid">
+                        <div class="model-detail-box">
+                            <h4>Cabeçalhos e Campos do Modelo</h4>
+                            <div id="model-tables-container" class="model-tags-container">
+                                <!-- Preenchido dinamicamente via JS -->
+                            </div>
+                        </div>
+
+                        <div class="model-detail-box">
+                            <h4>Páginas do Relatório PBIX</h4>
+                            <div id="model-sections-container" class="model-sections-list">
+                                <!-- Preenchido dinamicamente via JS -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Loading State (Single Mode) -->
+            <div id="loading-state" class="hidden">
+                <div class="spinner"></div>
+                <h3>Processando perfil...</h3>
+                <p>Navegando e salvando os documentos. Aguarde alguns instantes.</p>
+            </div>
+
+            <!-- Real-time Progress State (Batch Mode) -->
+            <div id="progress-state" class="hidden">
+                <div class="progress-header">
+                    <h3>Processamento em Lote</h3>
+                    <div class="progress-stats">
+                        <span id="progress-count">0 / 0</span> (<span id="progress-percent">0%</span>)
+                    </div>
+                </div>
+
+                <div class="progress-bar-container">
+                    <div id="progress-bar-fill" class="progress-bar-fill" style="width: 0%;"></div>
+                </div>
+
+                <div class="status-legend">
+                    <span class="legend-item"><span class="status-dot dot-gray"></span> Na Fila</span>
+                    <span class="legend-item"><span class="status-dot dot-yellow pulse"></span> Processando</span>
+                    <span class="legend-item"><span class="status-dot dot-green"></span> Sucesso</span>
+                    <span class="legend-item"><span class="status-dot dot-red"></span> Falhou</span>
+                </div>
+
+                <div class="realtime-list-container">
+                    <ul id="realtime-list" class="realtime-list"></ul>
+                </div>
+
+                <div id="batch-actions" class="hidden" style="margin-top: 1.5rem;">
+                    <button type="button" id="batch-reset-btn" class="secondary-btn" onclick="resetBatch()">Realizar Novo Scraping</button>
+                </div>
+            </div>
+
+            <!-- Success State (Single Mode) -->
+            <div id="success-state" class="hidden">
+                <div class="status-badge success-badge">✓ Sucesso</div>
+                <h3>Scraping Concluído</h3>
+                <p id="success-message">O perfil foi salvo com sucesso em formato PDF e JSON.</p>
+                
+                <div id="single-download">
+                    <a id="download-link" href="#" class="download-btn" download>Baixar Arquivo PDF</a>
+                </div>
+
+                <button type="button" id="reset-btn" class="secondary-btn" onclick="resetSingle()">Realizar Novo Scraping</button>
+            </div>
+
+            <!-- Error State -->
+            <div id="error-state" class="hidden">
+                <div class="status-badge error-badge">! Atenção</div>
+                <p id="error-message">Ocorreu um erro no processamento.</p>
+            </div>
+        </section>
+    </main>
+
+    <footer class="main-footer">
+        <div class="footer-container">
+            <div class="footer-logo">
+                <img src="assets/horiz_azul.jpg" alt="CEFET-MG" class="cefet-footer-img">
+            </div>
+            <p class="footer-info">Certifique-se de que a sessão está salva no arquivo <code>auth.json</code> antes de iniciar.</p>
+        </div>
+    </footer>
+
+    <script src="app.js?v=8"></script>
+</body>
+</html>
