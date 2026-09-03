@@ -227,37 +227,530 @@ function resolveProfileUrl(dataUrl, rawText, blocks) {
 // Regex para identificar linhas de período temporal no currículo do LinkedIn
 const dateRegex = /(?:janeiro|fevereiro|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro|\d{4}).*?(?:present|\d{4})/i;
 
+// Cache do índice de cargos regulamentados em memória (local_api/lista_cargos.json)
+let _cargoIndex = null;
+
+const termAliases = {
+    'estagiaria': 'estagio',
+    'estagiario': 'estagio',
+    'developer': 'programador',
+    'desenvolvedor': 'programador',
+    'desenvolvedora': 'programador',
+    'buyer': 'comprador',
+    'consultant': 'consultor',
+    'consultora': 'consultor',
+    'coordenadora': 'coordenador',
+    'administradora': 'administrador',
+    'engenheira': 'engenheiro',
+    'diretora': 'diretor',
+    'supervisora': 'supervisor',
+    'tecnica': 'tecnico',
+    'operadora': 'operador',
+    'gestora': 'gerente',
+    'gestor': 'gerente',
+    'associate': 'assistente',
+    'leader': 'lider',
+    'lider': 'coordenador'
+};
+
+function normalizeCargoString(str) {
+    if (!str || typeof str !== 'string') return '';
+    let s = str
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '') // remove acentuação
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    
+    const words = s.split(' ').map(w => termAliases[w] || w);
+    return words.join(' ');
+}
+
+function getCargoIndex() {
+    if (_cargoIndex) return _cargoIndex;
+    _cargoIndex = [];
+
+    const possiblePaths = [
+        path.join(__dirname, 'local_api', 'lista_cargos.json'),
+        path.join(__dirname, 'lista_cargos.json')
+    ];
+
+    for (const p of possiblePaths) {
+        if (fs.existsSync(p)) {
+            try {
+                const list = JSON.parse(fs.readFileSync(p, 'utf8'));
+                _cargoIndex = list.map(original => {
+                    const norm = normalizeCargoString(original);
+                    const tokens = norm.split(' ').filter(w => w.length > 2 && !['de', 'da', 'do', 'em', 'para', 'com', 'sem', 'dos', 'das'].includes(w));
+                    return { original, norm, tokens };
+                });
+                break;
+            } catch (e) {
+                console.error('Aviso: Erro ao ler lista_cargos.json:', e.message);
+            }
+        }
+    }
+    return _cargoIndex;
+}
+
+/**
+ * Valida se um determinado bloco de texto se aproxima de algum cargo regulamentado
+ * constante na lista oficial (local_api/lista_cargos.json) em case-insensitive.
+ * 
+ * @param {string} candidate - Texto candidato extraído do PDF
+ * @returns {{ isCargo: boolean, closestMatch: string, score: number, method: string }}
+ */
+function matchCargoWithList(candidate) {
+    if (!candidate || typeof candidate !== 'string') return { isCargo: false, closestMatch: '', score: 0, method: '' };
+    const cand = candidate.trim();
+    if (cand.length < 3 || cand.length > 90) return { isCargo: false, closestMatch: '', score: 0, method: '' };
+    
+    // Filtros negativos (bullet points, durações temporais, vigência de datas, etc.)
+    if (/^[\*\-•]/.test(cand)) return { isCargo: false, closestMatch: '', score: 0, method: '' };
+    if (/^\d+\s*(?:ano|anos|mês|meses)/i.test(cand)) return { isCargo: false, closestMatch: '', score: 0, method: '' };
+    if (dateRegex.test(cand)) return { isCargo: false, closestMatch: '', score: 0, method: '' };
+
+    const cNorm = normalizeCargoString(cand);
+    const cTokens = cNorm.split(' ').filter(w => w.length > 2 && !['de', 'da', 'do', 'em', 'para', 'com', 'sem', 'dos', 'das'].includes(w));
+    if (cTokens.length === 0) return { isCargo: false, closestMatch: '', score: 0, method: '' };
+
+    const index = getCargoIndex();
+
+    // 1. Match exato ou substring direta
+    for (const item of index) {
+        if (item.norm === cNorm) {
+            return { isCargo: true, closestMatch: item.original, score: 1.0, method: 'exact' };
+        }
+        if (cNorm.includes(item.norm) && item.norm.length >= 6) {
+            return { isCargo: true, closestMatch: item.original, score: 0.9, method: 'substring_in_candidate' };
+        }
+        if (item.norm.includes(cNorm) && cNorm.length >= 6) {
+            return { isCargo: true, closestMatch: item.original, score: 0.85, method: 'candidate_in_official' };
+        }
+    }
+
+    // 2. Similaridade de tokens (Dice/Jaccard ponderado)
+    let bestMatch = null;
+    let bestScore = 0;
+
+    for (const item of index) {
+        let matches = 0;
+        for (const token of cTokens) {
+            if (item.tokens.some(it => it === token || it.startsWith(token) || token.startsWith(it))) {
+                matches++;
+            }
+        }
+        if (matches > 0) {
+            const mainWordMatch = item.tokens[0] && (cTokens.includes(item.tokens[0]) || item.tokens[0] === cTokens[0]);
+            const score = (2 * matches) / (cTokens.length + item.tokens.length) + (mainWordMatch ? 0.3 : 0);
+            if (score > bestScore) {
+                bestScore = score;
+                bestMatch = item;
+            }
+        }
+    }
+
+    if (bestMatch && bestScore >= 0.45) {
+        return { isCargo: true, closestMatch: bestMatch.original, score: Math.min(1.0, bestScore), method: 'token_similarity' };
+    }
+
+    return { isCargo: false, closestMatch: '', score: 0, method: '' };
+}
+
+const lowerWordsSet = new Set([
+    'de', 'da', 'do', 'das', 'dos',
+    'em', 'na', 'no', 'nas', 'nos',
+    'e', 'and', 'of', 'for',
+    'a', 'o', 'as', 'os', 'ao', 'aos', 'à', 'às',
+    'com', 'sem', 'por', 'para', 'pelo', 'pela', 'pelos', 'pelas', 'pro', 'pra', 'sob', 'sobre'
+]);
+
+const uppercaseAcronymsMap = {
+    'ti': 'TI', 'rh': 'RH', 'sql': 'SQL', 'php': 'PHP', 'erp': 'ERP', 'crm': 'CRM',
+    'seo': 'SEO', 'sac': 'SAC', 'uti': 'UTI', 'tv': 'TV', 'clp': 'CLP', 'cme': 'CME',
+    'cnc': 'CNC', 'ctrc': 'CTRC', 'cftv': 'CFTV', 'ccih': 'CCIH', 'scih': 'SCIH',
+    'pmo': 'PMO', 'pcp': 'PCP', 'pcm': 'PCM', 'qsms': 'QSMS', 'dba': 'DBA', 'dbm': 'DBM',
+    'mis': 'MIS', 'soa': 'SOA', 'etl': 'ETL', 'bpm': 'BPM', 'abap': 'ABAP', 'asp': 'ASP',
+    'c#': 'C#', 'c++': 'C++', 'vb6': 'VB6', '3d': '3D', 'dj': 'DJ', 'pl': 'PL',
+    'rpg': 'RPG', 'ceo': 'CEO', 'bi': 'BI', 'sap': 'SAP', 'cad': 'CAD', 'cam': 'CAM',
+    'ios': 'iOS', '.net': '.NET', 'ii': 'II', 'iii': 'III', 'iv': 'IV', 'vi': 'VI',
+    'jr': 'Jr', 'sr': 'Sr'
+};
+
+function formatSingleCargoWord(w, isFirst) {
+    const lower = w.toLowerCase();
+    if (uppercaseAcronymsMap[lower]) return uppercaseAcronymsMap[lower];
+    if (!isFirst && lowerWordsSet.has(lower)) return lower;
+    if (w.includes('/')) {
+        return w.split('/').map((part, pIdx) => formatSingleCargoWord(part, pIdx === 0 && isFirst)).join('/');
+    }
+    if (w.includes('-')) {
+        return w.split('-').map((part, pIdx) => formatSingleCargoWord(part, pIdx === 0 && isFirst)).join('-');
+    }
+    return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+}
+
+/**
+ * Converte o cargo para Title Case no padrão pt-BR preservando preposições e siglas.
+ * 
+ * @param {string} title - Título a formatar
+ * @returns {string}
+ */
+function formatCargoTitleCase(title) {
+    if (!title || typeof title !== 'string') return '';
+    const words = title.trim().split(/\s+/);
+    return words.map((w, idx) => formatSingleCargoWord(w, idx === 0)).join(' ');
+}
+
 /**
  * Parser semântico ancorado por datas para a seção "Experiência".
- * Em vez de assumir posições fixas de linhas, localiza a linha de vigência temporal:
- *  - A linha imediatamente ANTERIOR à data é o verdadeiro cargo (ex: 'Analista de Remuneração e Benefícios Júnior').
- *  - As linhas ANTERIORES ao cargo (filtrando durações acumuladas como '3 anos 4 meses') formam a empresa.
+ * Localiza a vigência temporal e valida os blocos adjacentes contra
+ * a lista de cargos regulamentados para evitar erros de deslocamento de texto.
  * 
  * @param {Array<string>} blocks - Lista de blocos de texto do PDF
- * @returns {Object} { empresa, cargo }
+ * @returns {{ empresa: string, cargo: string, match: Object|null }}
  */
 function parseExperienceDetails(blocks) {
-    // Remove marcadores de paginação como "Page 1 of 2"
     const cleanBlocks = (blocks || []).filter(b => !/^Page\s+\d+\s+of\s+\d+/i.test(b.trim()));
     const expIdx = cleanBlocks.findIndex(b => b.trim() === 'Experiência');
-    if (expIdx === -1) return { empresa: '', cargo: '' };
+    if (expIdx === -1) return { empresa: '', cargo: '', match: null };
 
     // Percorre até 15 linhas após "Experiência" em busca da linha com datas
     for (let i = expIdx + 1; i < Math.min(expIdx + 15, cleanBlocks.length); i++) {
         if (dateRegex.test(cleanBlocks[i])) {
-            const cargo = cleanBlocks[i - 1];
+            let cargo = '';
+            let cargoMatch = null;
+            let cargoIdx = -1;
+
+            // Avalia os blocos imediatamente anteriores à data usando validação de cargo
+            for (let k = i - 1; k > expIdx; k--) {
+                const line = cleanBlocks[k].trim();
+                // Ignora durações acumuladas e localizações
+                if (/^\d+\s*(?:ano|anos|mês|meses)/i.test(line)) continue;
+                if (isGeographicLocation(line)) continue;
+
+                const m = matchCargoWithList(line);
+                if (m.isCargo) {
+                    cargo = line;
+                    cargoMatch = m;
+                    cargoIdx = k;
+                    break;
+                }
+            }
+
+            // Fallback caso nenhum bloco anterior tenha validado com alta pontuação
+            if (!cargo && i > expIdx + 1) {
+                // Seleciona a linha anterior filtrando durações e localizações
+                for (let k = i - 1; k > expIdx; k--) {
+                    const l = cleanBlocks[k].trim();
+                    if (/^\d+\s*(?:ano|anos|mês|meses)/i.test(l) || isGeographicLocation(l)) continue;
+                    cargo = l;
+                    cargoIdx = k;
+                    cargoMatch = matchCargoWithList(cargo);
+                    break;
+                }
+            }
+
+            // As linhas anteriores ao cargo (excluindo durações e localizações) compõem a empresa
             const companyLines = [];
-            for (let j = expIdx + 1; j < i - 1; j++) {
+            const endCompanyIdx = cargoIdx !== -1 ? cargoIdx : i - 1;
+            for (let j = expIdx + 1; j < endCompanyIdx; j++) {
                 const l = cleanBlocks[j].trim();
-                // Ignora tempos de permanência cumulativa na empresa (ex: '3 anos 4 meses', '11 meses')
                 if (/^\d+\s*(?:ano|anos|mês|meses)/i.test(l)) continue;
+                if (isGeographicLocation(l)) continue;
                 companyLines.push(l);
             }
             const empresa = companyLines.join(' ') || '';
-            return { empresa, cargo };
+            return { empresa, cargo, match: cargoMatch };
         }
     }
-    return { empresa: cleanBlocks[expIdx + 1] || '', cargo: cleanBlocks[expIdx + 2] || '' };
+    return { empresa: cleanBlocks[expIdx + 1] || '', cargo: cleanBlocks[expIdx + 2] || '', match: null };
+}
+
+// Cache do índice geográfico carregado de local_api/bairros_brasil.json
+let _geoIndex = null;
+
+function getGeoIndex() {
+    if (_geoIndex) return _geoIndex;
+    _geoIndex = {
+        ufs: new Set(),
+        municipios: new Set(),
+        bairros: new Set()
+    };
+
+    const geoFilePath = path.join(__dirname, 'local_api', 'bairros_brasil.json');
+    if (fs.existsSync(geoFilePath)) {
+        try {
+            const geoData = JSON.parse(fs.readFileSync(geoFilePath, 'utf8'));
+            geoData.forEach(u => {
+                if (u.sigla_uf) _geoIndex.ufs.add(u.sigla_uf.toLowerCase());
+                if (u.nome_uf) _geoIndex.ufs.add(u.nome_uf.toLowerCase());
+                if (u.municipios && Array.isArray(u.municipios)) {
+                    u.municipios.forEach(m => {
+                        if (m.nome_municipio) _geoIndex.municipios.add(m.nome_municipio.toLowerCase());
+                        if (m.bairros && Array.isArray(m.bairros)) {
+                            m.bairros.forEach(b => {
+                                if (b.nome_bairro) _geoIndex.bairros.add(b.nome_bairro.toLowerCase());
+                            });
+                        }
+                    });
+                }
+            });
+        } catch (e) {
+            console.error('Aviso: Não foi possível indexar local_api/bairros_brasil.json:', e.message);
+        }
+    }
+    return _geoIndex;
+}
+
+/**
+ * Valida se uma determinada linha de texto representa uma localização geográfica real,
+ * utilizando a base de municípios, UFs e bairros do Brasil e termos geográficos.
+ * 
+ * @param {string} line - Linha de texto a ser analisada
+ * @returns {boolean}
+ */
+function isGeographicLocation(line) {
+    if (!line || typeof line !== 'string') return false;
+    const l = line.trim();
+    if (l.length < 3 || l.length > 90) return false;
+    // Não pode conter pipes '|' ou bullet points '•' (característicos de cargo/headline)
+    if (l.includes('|') || l.includes('•')) return false;
+    // Não pode ser cabeçalho de seção conhecido
+    if (/^(resumo|experiência|contato|formação|page\s+\d+|certifications|languages|publications|principais\s+competências)/i.test(l)) return false;
+
+    const lower = l.toLowerCase();
+
+    // Se for exatamente o país ou denominação de região metropolitana isolada
+    if (lower === 'brasil' || lower === 'brazil' || lower === 'portugal' || lower.endsWith('e região') || lower.endsWith('e regiao')) {
+        return true;
+    }
+
+    const geo = getGeoIndex();
+
+    // Se contiver vírgula (padrão de localização do LinkedIn: "Cidade, Estado, País")
+    if (lower.includes(',')) {
+        const parts = lower.split(',').map(p => p.trim()).filter(p => p.length > 0);
+        if (parts.some(p => geo.municipios.has(p) || geo.ufs.has(p) || geo.bairros.has(p))) {
+            return true;
+        }
+    }
+
+    // Se for exatamente um município ou estado cadastrado
+    if (geo.municipios.has(lower) || geo.ufs.has(lower)) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Extrai com precisão a localização geográfica e a headline,
+ * evitando erros de deslocamento causados por headlines multilinha.
+ * 
+ * @param {Array<string>} blocks - Blocos de texto do PDF
+ * @param {string} personName - Nome do perfil
+ * @returns {{ location: string, headline: string }}
+ */
+function extractLocationAndHeadline(blocks, personName) {
+    const cleanBlocks = (blocks || []).filter(b => !/^Page\s+\d+\s+of\s+\d+/i.test(b.trim()));
+    const pName = (personName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    // Localiza o índice do nome do titular
+    let nameIdx = -1;
+    for (let i = 0; i < cleanBlocks.length; i++) {
+        const bClean = cleanBlocks[i].toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (bClean.length > 3 && (bClean === pName || bClean.startsWith(pName) || pName.startsWith(bClean))) {
+            nameIdx = i;
+            break;
+        }
+    }
+
+    let location = '';
+    let headlineParts = [];
+
+    if (nameIdx !== -1) {
+        for (let i = nameIdx + 1; i < Math.min(nameIdx + 8, cleanBlocks.length); i++) {
+            const b = cleanBlocks[i];
+            if (b === 'Resumo' || b === 'Experiência') {
+                // A linha imediatamente antes do Resumo/Experiência costuma ser a localização
+                const prev = cleanBlocks[i - 1];
+                if (isGeographicLocation(prev)) {
+                    location = prev;
+                }
+                break;
+            }
+            if (isGeographicLocation(b)) {
+                location = b;
+                break;
+            } else if (!b.startsWith('http') && b !== '--') {
+                headlineParts.push(b);
+            }
+        }
+    }
+
+    // Se a localização não foi identificada no intervalo inicial, busca nos primeiros 35 blocos
+    if (!location) {
+        for (let i = 0; i < Math.min(cleanBlocks.length, 35); i++) {
+            if (isGeographicLocation(cleanBlocks[i])) {
+                location = cleanBlocks[i];
+                break;
+            }
+        }
+    }
+
+    return {
+        location: location || 'Rio de Janeiro e Região, Brasil',
+        headline: headlineParts.join(' | ')
+    };
+}
+
+// Cache da lista de áreas econômicas carregadas de local_api/areas.json
+let _areasList = null;
+
+function getAreasList() {
+    if (_areasList) return _areasList;
+    _areasList = [];
+    const areasPath = path.join(__dirname, 'local_api', 'areas.json');
+    if (fs.existsSync(areasPath)) {
+        try {
+            const data = JSON.parse(fs.readFileSync(areasPath, 'utf8'));
+            _areasList = data.areas || [];
+        } catch (e) {
+            console.error('Aviso: Erro ao carregar local_api/areas.json:', e.message);
+        }
+    }
+    return _areasList;
+}
+
+const areaDefinitions = [
+    {
+        area: 'Tecnologia da Informação',
+        regex: /\b(ti|software|developer|desenvolvedor|desenvolvedora|devops|infraestrutura|dados|data|sql|python|java|full stack|front-end|back-end|banco de dados|sistemas|computacao|computação|cloud|docker|programador|programadora|redes|web|helpdesk|suporte tecnico)\b/i
+    },
+    {
+        area: 'Finanças',
+        regex: /\b(financeiro|financeira|financas|finanças|fp&a|contas a pagar|contas a receber|tesouraria|investimentos|valuation|controladoria|custos|orcamento|orçamento|credito|cobranca|cobrança|risco|planejamento financeiro|financial|bancario)\b/i
+    },
+    {
+        area: 'Contabilidade',
+        regex: /\b(contabil|contábil|contador|contadora|contabilidade|fiscal|tributario|tributário)\b/i
+    },
+    {
+        area: 'Recursos Humanos',
+        regex: /\b(rh|recursos humanos|recrutamento|selecao|seleção|r&s|dho|dp|departamento pessoal|atracao de talentos|atração de talentos|remuneracao|remuneração|beneficios|benefícios|gente e gestao|gente e gestão|treinamento|folha de pagamento)\b/i
+    },
+    {
+        area: 'Compras e Suprimentos',
+        regex: /\b(compras|comprador|compradora|suprimentos|procurement|buyer|sourcing|cotacao|cotação|almoxarifado|estoque)\b/i
+    },
+    {
+        area: 'Marketing',
+        regex: /\b(marketing|publicidade|propaganda|crm|branding|social media|midia social|mídia social|conteudo|conteúdo|growth|marketplace|digital marketing|loyalty|affiliate|merchandising)\b/i
+    },
+    {
+        area: 'Qualidade',
+        regex: /\b(qualidade|processos|melhoria continua|melhoria contínua|iso|sgq|garantia da qualidade|auditoria da qualidade)\b/i
+    },
+    {
+        area: 'Consultoria',
+        regex: /\b(consultor|consultora|consultoria|consultant|advisory)\b/i
+    },
+    {
+        area: 'Comercial',
+        regex: /\b(comercial|key account|inside sales|relacionamento|parcerias)\b/i
+    },
+    {
+        area: 'Vendas',
+        regex: /\b(vendas|vendedor|vendedora|executivo de vendas|representante comercial|balconista)\b/i
+    },
+    {
+        area: 'Educação',
+        regex: /\b(professor|professora|docente|pedagogo|pedagoga|monitor|monitora|ensino|instrutor|estatistica aplicada|estatística aplicada|educacional)\b/i
+    },
+    {
+        area: 'Engenharia',
+        regex: /\b(engenharia|engenheiro|engenheira)\b/i
+    },
+    {
+        area: 'Logística e Transportes',
+        regex: /\b(logistica|logística|transporte|transportes|frotas|expedicao|expedição|armazem|armazém|distribuicao|distribuição|supply chain|motorista)\b/i
+    },
+    {
+        area: 'Jurídico',
+        regex: /\b(advogado|advogada|juridico|jurídico|direito|paralegal)\b/i
+    },
+    {
+        area: 'Auditoria',
+        regex: /\b(auditor|auditora|auditoria|compliance|controles internos)\b/i
+    },
+    {
+        area: 'Artes e Cultura',
+        regex: /\b(teatro|arte|artes|cinema|espetaculo|espetáculo|musica|música|cultura|producao cultural)\b/i
+    },
+    {
+        area: 'Saúde',
+        regex: /\b(saude|saúde|medico|médico|medica|médica|enfermeiro|enfermeira|farmaceutico|farmacêutico|nutricionista|hospitalar|clinico|psicologo|psicólogo|fisioterapeuta)\b/i
+    },
+    {
+        area: 'Atendimento ao Cliente',
+        regex: /\b(atendimento|sac|call center|telemarketing|customer success|recepcao|recepcionista)\b/i
+    },
+    {
+        area: 'Design',
+        regex: /\b(designer|design|ui\/ux|web design|ilustrador|ilustradora)\b/i
+    },
+    {
+        area: 'Administrativo',
+        regex: /\b(administrativo|administrativa|auxiliar de escritorio|auxiliar de escritório|secretaria|secretária)\b/i
+    },
+    {
+        area: 'Gestão e Administração',
+        regex: /\b(administracao|administração|administrador|administradora|gerente|gerencia|gerência|coordenador|coordenadora|supervisor|supervisora|diretor|diretora|projetos|project manager|pmo|operacoes|operações|empreendedor|ceo|gestor|gestora)\b/i
+    }
+];
+
+/**
+ * Determina e valida a Área de Atuação Econômica conforme local_api/areas.json.
+ * Analisa prioritariamente o cargo funcional, a empresa e a headline profissional.
+ * 
+ * @param {string} cargo - Cargo do profissional
+ * @param {string} headline - Headline ou resumo no topo do perfil
+ * @param {string} empresa - Nome da empresa
+ * @returns {string} Área econômica oficial de areas.json
+ */
+function determineEconomicArea(cargo, headline, empresa) {
+    const validAreas = getAreasList();
+    const c = cargo || '';
+    const h = headline || '';
+    const e = empresa || '';
+
+    // 1. Testa primeiramente no cargo (prioridade funcional máxima)
+    for (const def of areaDefinitions) {
+        if (def.regex.test(c)) {
+            if (validAreas.includes(def.area)) return def.area;
+        }
+    }
+
+    // 2. Se o cargo for genérico (ex: "Estagiário"), verifica a empresa (ex: Teatro Rival -> Artes e Cultura)
+    if (e) {
+        for (const def of areaDefinitions) {
+            if (def.regex.test(e)) {
+                if (validAreas.includes(def.area)) return def.area;
+            }
+        }
+    }
+
+    // 3. Testa na headline profissional
+    for (const def of areaDefinitions) {
+        if (def.regex.test(h)) {
+            if (validAreas.includes(def.area)) return def.area;
+        }
+    }
+
+    // 4. Fallback padrão garantido em areas.json
+    return validAreas.includes('Gestão e Administração') ? 'Gestão e Administração' : (validAreas[0] || 'Não informado');
 }
 
 /**
@@ -306,46 +799,39 @@ function getBaseBiData() {
             const expParsed = parseExperienceDetails(blocks);
             let empresa = expParsed.empresa;
             let cargo = expParsed.cargo;
-            let headline = '';
-            let location = '';
 
-            // Headline sob o nome no topo do currículo
-            const cleanBlocks = blocks.filter(b => !/^Page\s+\d+\s+of\s+\d+/i.test(b.trim()));
-            const nameIdx = cleanBlocks.indexOf(name);
-            if (nameIdx !== -1) {
-                if (cleanBlocks[nameIdx + 1] && !cleanBlocks[nameIdx + 1].startsWith('http') && cleanBlocks[nameIdx + 1] !== '--') {
-                    headline = cleanBlocks[nameIdx + 1];
-                }
-                if (cleanBlocks[nameIdx + 2] && !cleanBlocks[nameIdx + 2].includes('Experiência') && !cleanBlocks[nameIdx + 2].includes('Resumo')) {
-                    location = cleanBlocks[nameIdx + 2];
-                }
-            }
+            // Extração semântica protegida de Região (Cidade) e Headline
+            const geoExtracted = extractLocationAndHeadline(blocks, name);
+            const location = geoExtracted.location;
+            const headline = geoExtracted.headline;
 
-            // Fallback para cargo e empresa a partir da headline
+            // Fallback para cargo a partir da headline validada contra a lista de cargos
             if (!cargo && headline) {
-                cargo = headline.split('|')[0].trim();
+                const parts = headline.split('|').map(p => p.trim()).filter(p => p.length > 0);
+                let bestPart = '';
+                let bestScore = 0;
+                for (const part of parts) {
+                    const m = matchCargoWithList(part);
+                    if (m.isCargo && m.score > bestScore) {
+                        bestScore = m.score;
+                        bestPart = part;
+                    }
+                }
+                cargo = bestPart || parts[0] || '';
             }
+
+            // Formata o cargo em Title Case padronizado
+            if (cargo) {
+                cargo = formatCargoTitleCase(cargo);
+            }
+
             if (!empresa && headline) {
                 const matchNa = headline.match(/(?:na|no|at|em)\s+([A-Za-z0-9\s&.-]+)/i);
                 if (matchNa) empresa = matchNa[1].split('|')[0].trim();
             }
 
-            // Categorização contextual de área de atuação profissional
-            const hLower = (headline + ' ' + cargo + ' ' + (data.rawText || '')).toLowerCase();
-            let area = 'Administração Geral';
-            if (hLower.includes('dados') || hLower.includes('data') || hLower.includes('bi ') || hLower.includes('sql') || hLower.includes('analyst') || hLower.includes('buyer')) {
-                area = 'Análise de Dados / BI';
-            } else if (hLower.includes('finance') || hLower.includes('controladoria') || hLower.includes('investimento') || hLower.includes('risco') || hLower.includes('contas a pagar') || hLower.includes('contas a receber')) {
-                area = 'Finanças & Controladoria';
-            } else if (hLower.includes('rh') || hLower.includes('recursos humanos') || hLower.includes('remunera') || hLower.includes('benefício') || hLower.includes('recrutamento') || hLower.includes('r&s') || hLower.includes('atração de talentos')) {
-                area = 'Recursos Humanos';
-            } else if (hLower.includes('software') || hLower.includes('developer') || hLower.includes('devops') || hLower.includes('infraestrutura') || hLower.includes('docker') || hLower.includes('full stack')) {
-                area = 'Tecnologia / TI';
-            } else if (hLower.includes('marketing') || hLower.includes('venda') || hLower.includes('comercial')) {
-                area = 'Comercial & Marketing';
-            } else if (hLower.includes('administra') || hLower.includes('projetos') || hLower.includes('gest') || hLower.includes('consultant')) {
-                area = 'Administração & Gestão';
-            }
+            // Classificação e validação da Área de Atuação Econômica conforme local_api/areas.json
+            const area = determineEconomicArea(cargo, headline, empresa);
 
             records.push({
                 'Nomes': name || 'Não informado',
