@@ -9,7 +9,6 @@
     "auth": "node auth.js",
     "scrape": "node script.js",
     "install-browsers": "playwright install chromium",
-    "install-browsers:linux": "playwright install --with-deps chromium"
     "install-browsers:linux": "playwright install --with-deps chromium",
     "dist": "electron-builder",
     "dist:dir": "electron-builder --dir",
