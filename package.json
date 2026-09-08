@@ -1,18 +1,29 @@
 {
-  "name": "scraping",
+  "name": "linkedin-profile-scraper",
   "version": "1.0.0",
-  "description": "",
-  "main": "auth.js",
+  "description": "Extrator estruturado de perfis do LinkedIn em PDF e JSON com explorador de dados e integração Power BI",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "auth": "node auth.js",
+    "scrape": "node script.js",
+    "install-browsers": "playwright install chromium",
+    "install-browsers:linux": "playwright install --with-deps chromium"
   },
-  "keywords": [],
+  "keywords": [
+    "linkedin",
+    "scraper",
+    "playwright",
+    "powerbi",
+    "pdf-parse"
+  ],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
     "adm-zip": "^0.6.0",
     "express": "^5.2.1",
-    "pdf-parse": "^2.4.5"
+    "pdf-parse": "^2.4.5",
+    "playwright": "^1.63.0"
   }
 }

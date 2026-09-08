@@ -523,9 +523,10 @@ function isGeographicLocation(line) {
     const lower = l.toLowerCase();
 
     // Se for exatamente o país ou denominação de região metropolitana isolada
+    /*
     if (lower === 'brasil' || lower === 'brazil' || lower === 'portugal' || lower.endsWith('e região') || lower.endsWith('e regiao')) {
         return true;
-    }
+    }*/
 
     const geo = getGeoIndex();
 
@@ -601,7 +602,7 @@ function extractLocationAndHeadline(blocks, personName) {
     }
 
     return {
-        location: location || 'Rio de Janeiro e Região, Brasil',
+        location: location || 'Não informado',
         headline: headlineParts.join(' | ')
     };
 }
@@ -783,13 +784,6 @@ function getBaseBiData() {
                 if (candidate) name = candidate;
             }
 
-            // Correção de acentuação comum de nomes portugueses
-            name = name
-                .replace(/^Letcia\b/, 'Letícia')
-                .replace(/\bFrazo\b/, 'Frazão')
-                .replace(/\bBencio\b/, 'Benício')
-                .replace(/\bLivia\b/, 'Lívia');
-
             // Prevenção de duplicatas (por URL ou nome)
             const key = (url || name).toLowerCase();
             if (seen.has(key)) continue;
@@ -830,16 +824,17 @@ function getBaseBiData() {
                 if (matchNa) empresa = matchNa[1].split('|')[0].trim();
             }
 
+            // Categorização contextual de área de atuação profissional
             // Classificação e validação da Área de Atuação Econômica conforme local_api/areas.json
             const area = determineEconomicArea(cargo, headline, empresa);
 
             records.push({
                 'Nomes': name || 'Não informado',
                 'Cargo': cargo || headline || 'Não informado',
-                'Empresa': empresa || 'CEFET-MG / Geral',
+                'Empresa': empresa || 'Não informado',
                 'Área': area,
-                'Região (Cidade)': location || 'Rio de Janeiro e Região, Brasil',
-                'Coleta de Dados': data.dataScraping || data.data_scraping || '01-09-2026',
+                'Região (Cidade)': location || 'Não informado',
+                'Coleta de Dados': data.dataScraping || data.data_scraping || '-',
                 'STATUS': 'Analisado',
                 'url': url || '',
                 'pdfFile': data.pdfFile || data.arquivo_pdf || null,

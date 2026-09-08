@@ -1,5 +1,8 @@
+node_modules/
+auth.json
 /dados_json
 /pdfs
 /recycle_bin
-/semantic-model-explorer
 perfis_linkedin.csv
+.DS_Store
+*.log

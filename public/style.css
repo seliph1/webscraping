@@ -85,12 +85,12 @@ h1 {
 /* Container Principal */
 .container {
     width: 100%;
-    max-width: 900px;
+    max-width: 1320px;
     padding: 2rem 1.5rem;
     flex: 1;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
 }
 
 /* Card Limpo */
@@ -98,8 +98,9 @@ h1 {
     background-color: var(--card-bg);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
-    padding: 2.25rem 2rem;
+    padding: 2rem 2.25rem;
     box-shadow: var(--shadow-md);
+    width: 100%;
 }
 
 /* Abas */
@@ -151,7 +152,7 @@ label {
     color: var(--cefet-blue);
 }
 
-input[type="url"], textarea {
+input[type="url"], input[type="text"], textarea {
     width: 100%;
     background-color: var(--cefet-white);
     border: 1px solid var(--border-color);
@@ -169,12 +170,12 @@ textarea {
     min-height: 120px;
 }
 
-input[type="url"]:focus, textarea:focus {
+input[type="url"]:focus, input[type="text"]:focus, textarea:focus {
     border-color: var(--cefet-blue);
     box-shadow: 0 0 0 3px rgba(0, 60, 113, 0.12);
 }
 
-input[type="url"]::placeholder, textarea::placeholder {
+input[type="url"]::placeholder, input[type="text"]::placeholder, textarea::placeholder {
     color: #94A3B8;
 }
 
@@ -530,7 +531,7 @@ input[type="url"]::placeholder, textarea::placeholder {
 }
 
 .footer-container {
-    max-width: 900px;
+    max-width: 1320px;
     margin: 0 auto;
     display: flex;
     flex-direction: column;
@@ -723,7 +724,7 @@ input[type="url"]::placeholder, textarea::placeholder {
 .table-responsive {
     overflow-x: auto;
     overflow-y: auto;
-    max-height: 420px;
+    max-height: 520px;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     background-color: #FFFFFF;
@@ -1066,7 +1067,7 @@ input[type="url"]::placeholder, textarea::placeholder {
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     overflow: hidden;
-    min-height: 480px;
+    min-height: 540px;
     box-shadow: var(--shadow-sm);
 }
 
