@@ -2,13 +2,59 @@
   "name": "linkedin-profile-scraper",
   "version": "1.0.0",
   "description": "Extrator estruturado de perfis do LinkedIn em PDF e JSON com explorador de dados e integração Power BI",
-  "main": "server.js",
+  "main": "main.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "electron .",
+    "web": "node server.js",
     "auth": "node auth.js",
     "scrape": "node script.js",
     "install-browsers": "playwright install chromium",
     "install-browsers:linux": "playwright install --with-deps chromium"
+    "install-browsers:linux": "playwright install --with-deps chromium",
+    "dist": "electron-builder",
+    "dist:dir": "electron-builder --dir",
+    "dist:win": "electron-builder --win",
+    "dist:portable": "electron-builder --win portable",
+    "dist:linux": "electron-builder --linux AppImage"
+  },
+  "build": {
+    "appId": "br.cefet.linkedinscraper",
+    "productName": "LinkedIn Scraper CEFET-RJ",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "server.js",
+      "script.js",
+      "pbixHandler.js",
+      "pbixDecoder.js",
+      "egressos.pbix",
+      "local_api/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        }
+      ]
+    }
   },
   "keywords": [
     "linkedin",
@@ -25,5 +71,9 @@
     "express": "^5.2.1",
     "pdf-parse": "^2.4.5",
     "playwright": "^1.63.0"
+  },
+  "devDependencies": {
+    "electron": "^44.2.0",
+    "electron-builder": "^26.15.3"
   }
 }
