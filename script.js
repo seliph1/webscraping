@@ -17,9 +17,16 @@ const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
 const pdfModule = require("pdf-parse");
+const { PDFS_DIR, JSON_DIR, AUTH_PATH, getBrowsersPath } = require("./paths");
 
-const downloadFolder = path.join(__dirname, 'pdfs');
-const jsonFolder = path.join(__dirname, 'dados_json');
+const downloadFolder = PDFS_DIR;
+const jsonFolder = JSON_DIR;
+
+// Garante que o Playwright localize o Chromium embutido
+const bundledBrowsersPath = getBrowsersPath();
+if (bundledBrowsersPath && !process.env.PLAYWRIGHT_BROWSERS_PATH) {
+    process.env.PLAYWRIGHT_BROWSERS_PATH = bundledBrowsersPath;
+}
 
 /**
  * Normaliza qualquer entrada de URL ou nome de perfil para o padrão oficial:
@@ -276,7 +283,7 @@ async function scrapeProfile(url) {
         slowMo: 300,
     });
 
-    const authPath = path.join(__dirname, "auth.json");
+    const authPath = AUTH_PATH;
     if (!fs.existsSync(authPath)) {
         await browser.close().catch(() => {});
         throw new Error("auth.json não encontrado. Faça o login primeiro usando auth.js.");
@@ -310,7 +317,7 @@ async function scrapeBatch(urls, onProgress) {
         slowMo: 300,
     });
 
-    const authPath = path.join(__dirname, "auth.json");
+    const authPath = AUTH_PATH;
     if (!fs.existsSync(authPath)) {
         await browser.close().catch(() => {});
         throw new Error("auth.json não encontrado. Faça o login primeiro usando auth.js.");

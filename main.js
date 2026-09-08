@@ -2,6 +2,14 @@ const { app, BrowserWindow, dialog } = require('electron');
 const path = require('path');
 const http = require('http');
 
+const { getBrowsersPath, EXTERNAL_BASE_DIR } = require('./paths');
+
+// Configura o caminho do Chromium embutido do Playwright
+const browsersPath = getBrowsersPath();
+if (browsersPath) {
+    process.env.PLAYWRIGHT_BROWSERS_PATH = browsersPath;
+}
+
 let mainWindow = null;
 const DEFAULT_PORT = 3000;
 

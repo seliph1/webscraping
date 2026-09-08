@@ -83,20 +83,23 @@ Os binários compilados ficam localizados na pasta `dist/`:
 ### 1. Executável Portátil Único (`.exe`)
 - **Arquivo:** `dist/LinkedIn Scraper CEFET-RJ 1.0.0.exe`
 - **Como usar:** Basta copiar este único arquivo `.exe` para qualquer computador com Windows e dar **dois cliques**. Ele não precisa de instalação prévia, cria o ambiente em tempo de execução e abre o aplicativo imediatamente.
+- **Tudo incluso:** O navegador Chromium do Playwright já está integrado diretamente ao pacote. A máquina de destino não precisa baixar nada na internet.
+- **Pastas Externas:** Ao ser executado, as pastas `dados_json` e `pdfs` são salvas no mesmo diretório do executável, permitindo que você visualize e copie os arquivos diretamente pelo Windows Explorer.
+- **Pastas e Arquivos Externos:** Ao ser executado, as pastas `dados_json` e `pdfs`, bem como os arquivos `auth.json` (credenciais da sessão) e `egressos.pbix` (modelo do Power BI) ficam no mesmo diretório do executável. Você pode substituir o arquivo `.pbix` por outro modelo atualizado ou copiar o `auth.json` diretamente pelo Windows Explorer.
 
 ### 2. Pasta Portátil Descompactada (`win-unpacked`)
 - **Pasta:** `dist/win-unpacked/`
 - **Executável:** `dist/win-unpacked/LinkedIn Scraper CEFET-RJ.exe`
-- **Como usar:** É a aplicação já descompactada com todos os binários e dependências nativas pré-incluídos. Você pode compactar essa pasta em um arquivo `.zip` e distribuí-la. A inicialização é instantânea ao clicar duas vezes no executável.
+- **Como usar:** É a aplicação já descompactada com todos os binários e dependências nativas pré-incluídos (incluindo o Chromium em `resources/browsers/`). Você pode compactar essa pasta em um arquivo `.zip` e distribuí-la. A inicialização é instantânea ao clicar duas vezes no executável.
 
 ### 3. Gerando Novos Pacotes Pré-Compilados
 Para recompilar o projeto após alterações de código, utilize os scripts:
 
-- **Gerar o executável portátil único (.exe):**
+- **Gerar o executável portátil único (.exe com Chromium integrado):**
   ```bash
   npm run dist:portable
   ```
-- **Gerar a pasta descompactada para Windows:**
+- **Gerar a pasta descompactada para Windows (com Chromium integrado):**
   ```bash
   npm run dist:dir
   ```
@@ -110,8 +113,10 @@ Para recompilar o projeto após alterações de código, utilize os scripts:
   npm run dist:linux
   ```
 
-> 💡 **Nota sobre o Playwright na máquina de destino:**
-> O navegador Chromium para automação é gerenciado pelo Playwright. Caso a máquina de destino vá realizar a extração dos perfis no LinkedIn e ainda não possua o Chromium na pasta local (`%LOCALAPPDATA%\ms-playwright`), basta executar uma única vez `npx playwright install chromium` ou copiar a pasta do navegador.
+> 💡 **Nota sobre Navegador e Armazenamento Externo:**
+> - O Playwright utiliza automaticamente o Chromium embutido em `resources/browsers/` quando empacotado.
+> - As pastas `dados_json/` e `pdfs/` são **sempre externas ao `.exe`** (ficam na mesma pasta do executável ou diretório de execução). Você pode abrir, copiar ou adicionar arquivos manualmente sem afetar o executável.
+> - As pastas `dados_json/` e `pdfs/` e os arquivos `auth.json` e `egressos.pbix` são **sempre externos ao `.exe`** (ficam na mesma pasta do executável ou diretório de execução). Você pode substituir o modelo `.pbix` ou inspecionar os arquivos gerados livremente.
 
 ---
 
@@ -121,6 +126,7 @@ Para recompilar o projeto após alterações de código, utilize os scripts:
 ├── auth.js               # Script para autenticação interativa e geração do auth.json
 ├── script.js             # Motor de scraping com Playwright e parsing de PDFs
 ├── server.js             # Servidor Express com API REST e streaming SSE
+├── paths.js              # Centralizador de caminhos externos e browsers embutidos
 ├── main.js               # Processo principal do Electron (janela nativa)
 ├── Iniciar-App.vbs        # Inicializador silencioso sem janela de terminal (Windows)
 ├── Iniciar.bat           # Inicializador em lote com logs de terminal (Windows)
@@ -129,15 +135,18 @@ Para recompilar o projeto após alterações de código, utilize os scripts:
 ├── pbixDecoder.js        # Decodificador VertiPaq / XPress9 (WASM) para arquivos .pbix
 ├── package.json          # Dependências e scripts de execução multiplataforma
 ├── egressos.pbix         # Arquivo do modelo Power BI integrado
+├── egressos.pbix         # Arquivo do modelo Power BI integrado (externo ao .exe)
+├── auth.json             # Sessão autenticada do LinkedIn (externo ao .exe)
 ├── dist/                 # Executáveis e pacotes pré-compilados para distribuição
+├── browsers/             # Binários locais do Chromium para empacotamento
 ├── local_api/
 │   ├── bairros_brasil.json   # Base geográfica para validação de Região (Cidade)
 │   ├── lista_cargos.json     # 2.871 cargos regulamentados no Brasil
 │   ├── areas.json            # 42 áreas de atuação econômica padronizadas
 │   └── cargos_por_area.json  # Base unificada relacionando cargos e áreas
 ├── public/               # Interface Web (HTML, CSS, JS)
-├── dados_json/           # Arquivos JSON extraídos dos currículos
-└── pdfs/                 # PDFs originais baixados do LinkedIn
+├── dados_json/           # Arquivos JSON extraídos dos currículos (externo ao .exe)
+└── pdfs/                 # PDFs originais baixados do LinkedIn (externo ao .exe)
 ```
 
 ---

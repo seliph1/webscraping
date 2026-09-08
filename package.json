@@ -26,12 +26,20 @@
       "main.js",
       "server.js",
       "script.js",
+      "paths.js",
       "pbixHandler.js",
       "pbixDecoder.js",
       "egressos.pbix",
       "local_api/**/*",
       "public/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "browsers",
+        "to": "browsers",
+        "filter": ["**/*"]
+      }
     ],
     "asar": true,
     "win": {

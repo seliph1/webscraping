@@ -23,20 +23,25 @@ const {
     exportProfilesToCsv 
 } = require('./pbixHandler');
 
+const { PDFS_DIR, JSON_DIR } = require('./paths');
+const { PDFS_DIR, JSON_DIR, PBIX_PATH } = require('./paths');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 /**
  * Caminho configurável para o arquivo Power BI (.pbix).
  * Pode ser sobrescrito através da variável de ambiente PBIX_FILE_PATH.
+ * Prioridade: PBIX_FILE_PATH do ambiente > PBIX_PATH externo > padrão interno
  */
 const PBIX_FILE_PATH = process.env.PBIX_FILE_PATH || path.join(__dirname, 'egressos.pbix');
+const PBIX_FILE_PATH = process.env.PBIX_FILE_PATH || PBIX_PATH;
 
 // Middlewares para parsing de JSON e serviço de diretórios estáticos
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
-app.use('/downloads', express.static(path.join(__dirname, 'pdfs')));
-app.use('/json', express.static(path.join(__dirname, 'dados_json')));
+app.use('/downloads', express.static(PDFS_DIR));
+app.use('/json', express.static(JSON_DIR));
 
 // ============================================================================
 // ROTAS DO MODELO SEMÂNTICO & EXPLORADOR PBIX

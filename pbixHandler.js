@@ -16,6 +16,7 @@ const AdmZip = require('adm-zip');
 const fs = require('fs');
 const path = require('path');
 const decoder = require('./pbixDecoder');
+const { JSON_DIR } = require('./paths');
 
 // Cache em memória para os dados da tabela real do PBIX (evita re-decodificar a cada requisição)
 let _pbixRealCache = null;
@@ -761,7 +762,7 @@ function determineEconomicArea(cargo, headline, empresa) {
  * @returns {Array<Object>} Lista de registros consolidados
  */
 function getBaseBiData() {
-    const jsonFolder = path.join(__dirname, 'dados_json');
+    const jsonFolder = JSON_DIR;
     const records = [];
     const seen = new Set();
 
