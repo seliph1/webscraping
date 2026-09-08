@@ -17,7 +17,7 @@ const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
 const pdfModule = require("pdf-parse");
-const { PDFS_DIR, JSON_DIR, AUTH_PATH, getBrowsersPath } = require("./paths");
+const { PDFS_DIR, JSON_DIR, AUTH_PATH, getBrowsersPath, getChromiumExecutablePath } = require("./paths");
 
 const downloadFolder = PDFS_DIR;
 const jsonFolder = JSON_DIR;
@@ -26,6 +26,23 @@ const jsonFolder = JSON_DIR;
 const bundledBrowsersPath = getBrowsersPath();
 if (bundledBrowsersPath && !process.env.PLAYWRIGHT_BROWSERS_PATH) {
     process.env.PLAYWRIGHT_BROWSERS_PATH = bundledBrowsersPath;
+}
+
+/**
+ * Retorna as opções padrão para inicialização do Chromium, apontando
+ * diretamente para o chrome.exe real para evitar a busca pelo chrome-headless-shell
+ */
+function getLaunchOptions(overrides = {}) {
+    const options = {
+        headless: true,
+        slowMo: 300,
+        ...overrides
+    };
+    const explicitExe = getChromiumExecutablePath();
+    if (explicitExe) {
+        options.executablePath = explicitExe;
+    }
+    return options;
 }
 
 /**
@@ -278,10 +295,7 @@ async function scrapeSingleProfile(context, rawUrl) {
  * @returns {Promise<string>} Nome do arquivo PDF gerado
  */
 async function scrapeProfile(url) {
-    const browser = await chromium.launch({
-        headless: true,
-        slowMo: 300,
-    });
+    const browser = await chromium.launch(getLaunchOptions());
 
     const authPath = AUTH_PATH;
     if (!fs.existsSync(authPath)) {
@@ -312,10 +326,7 @@ async function scrapeProfile(url) {
  * @returns {Promise<Array<Object>>} Lista de resultados por URL
  */
 async function scrapeBatch(urls, onProgress) {
-    const browser = await chromium.launch({
-        headless: true,
-        slowMo: 300,
-    });
+    const browser = await chromium.launch(getLaunchOptions());
 
     const authPath = AUTH_PATH;
     if (!fs.existsSync(authPath)) {

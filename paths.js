@@ -95,11 +95,34 @@ function getBrowsersPath() {
     return undefined;
 }
 
+/**
+ * Localiza o executável chrome.exe garantindo que não caia no headless shell ausente
+ */
+function getChromiumExecutablePath() {
+    const browsersRoot = getBrowsersPath();
+    if (browsersRoot) {
+        // Tenta encontrar o chrome.exe dentro de qualquer subpasta chromium-*/chrome-win64
+        try {
+            const items = fs.readdirSync(browsersRoot);
+            for (const item of items) {
+                if (item.startsWith('chromium-') && !item.includes('headless')) {
+                    const candidate = path.join(browsersRoot, item, 'chrome-win64', 'chrome.exe');
+                    if (fs.existsSync(candidate)) {
+                        return candidate;
+                    }
+                }
+            }
+        } catch (e) {}
+    }
+    return undefined;
+}
+
 module.exports = {
     EXTERNAL_BASE_DIR,
     PDFS_DIR,
     JSON_DIR,
     AUTH_PATH,
     PBIX_PATH,
-    getBrowsersPath
+    getBrowsersPath,
+    getChromiumExecutablePath
 };

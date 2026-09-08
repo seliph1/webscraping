@@ -1,5 +1,5 @@
 const { chromium } = require("playwright");
-const { AUTH_PATH, getBrowsersPath } = require("./paths");
+const { AUTH_PATH, getBrowsersPath, getChromiumExecutablePath } = require("./paths");
 
 // Garante que utilize o Chromium embutido se disponível
 const bundledBrowsersPath = getBrowsersPath();
@@ -8,9 +8,15 @@ if (bundledBrowsersPath && !process.env.PLAYWRIGHT_BROWSERS_PATH) {
 }
 
 (async () => {
-    const browser = await chromium.launch({
+    const launchOptions = {
         headless: false
-    });
+    };
+    const explicitExe = getChromiumExecutablePath();
+    if (explicitExe) {
+        launchOptions.executablePath = explicitExe;
+    }
+
+    const browser = await chromium.launch(launchOptions);
 
     const context = await browser.newContext();
     const page = await context.newPage();

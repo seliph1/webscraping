@@ -23,7 +23,6 @@ const {
     exportProfilesToCsv 
 } = require('./pbixHandler');
 
-const { PDFS_DIR, JSON_DIR } = require('./paths');
 const { PDFS_DIR, JSON_DIR, PBIX_PATH } = require('./paths');
 
 const app = express();
@@ -34,7 +33,6 @@ const PORT = process.env.PORT || 3000;
  * Pode ser sobrescrito através da variável de ambiente PBIX_FILE_PATH.
  * Prioridade: PBIX_FILE_PATH do ambiente > PBIX_PATH externo > padrão interno
  */
-const PBIX_FILE_PATH = process.env.PBIX_FILE_PATH || path.join(__dirname, 'egressos.pbix');
 const PBIX_FILE_PATH = process.env.PBIX_FILE_PATH || PBIX_PATH;
 
 // Middlewares para parsing de JSON e serviço de diretórios estáticos
