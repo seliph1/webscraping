@@ -23,6 +23,15 @@ const {
     exportProfilesToCsv 
 } = require('./pbixHandler');
 
+const {
+    getAuthFileInfo,
+    verifyLinkedInSession,
+    startAuthSession,
+    cancelAuthSession,
+    saveCurrentAuthSession,
+    isAuthRunning
+} = require('./auth');
+
 const { PDFS_DIR, JSON_DIR, PBIX_PATH } = require('./paths');
 
 const app = express();
@@ -40,6 +49,124 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/downloads', express.static(PDFS_DIR));
 app.use('/json', express.static(JSON_DIR));
+
+// ============================================================================
+// ROTAS DE AUTENTICAÇÃO LINKEDIN (auth.js & VERIFICAÇÃO DE SESSÃO)
+// ============================================================================
+
+/**
+ * GET /api/auth/status
+ * Retorna o status imediato do arquivo local auth.json e se há login em andamento.
+ */
+app.get('/api/auth/status', (req, res) => {
+    try {
+        const fileInfo = getAuthFileInfo();
+        res.json({
+            success: true,
+            inProgress: isAuthRunning(),
+            ...fileInfo
+        });
+    } catch (error) {
+        console.error('Erro ao verificar status do auth.json:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Erro ao consultar status da autenticação.'
+        });
+    }
+});
+
+/**
+ * POST /api/auth/verify
+ * Realiza teste de autenticação real no LinkedIn via Playwright headless
+ * para verificar se a sessão de auth.json continua ativa e válida.
+ */
+app.post('/api/auth/verify', async (req, res) => {
+    try {
+        console.log('[API] Iniciando verificação de sessão no LinkedIn...');
+        const result = await verifyLinkedInSession();
+        res.json({
+            success: true,
+            ...result
+        });
+    } catch (error) {
+        console.error('Erro ao verificar sessão do LinkedIn:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Erro ao testar sessão no LinkedIn.'
+        });
+    }
+});
+
+/**
+ * POST /api/auth/start
+ * Inicia o navegador para execução interativa do auth.js permitindo login manual.
+ */
+app.post('/api/auth/start', async (req, res) => {
+    try {
+        if (isAuthRunning()) {
+            return res.json({
+                success: true,
+                alreadyRunning: true,
+                message: 'A autenticação já está em andamento no navegador.'
+            });
+        }
+
+        console.log('[API] Disparando execução do auth.js...');
+        // Inicia assincronamente em segundo plano
+        startAuthSession({
+            onStatus: (st) => console.log('[Auth Status]', st.message),
+            onComplete: (done) => console.log('[Auth Complete]', done.message),
+            onError: (err) => console.error('[Auth Error]', err.message)
+        }).catch(err => {
+            console.error('[Auth Error ao iniciar]', err);
+        });
+
+        res.json({
+            success: true,
+            message: 'Navegador iniciado. Faça o login na janela do LinkedIn.'
+        });
+    } catch (error) {
+        console.error('Erro ao iniciar auth.js:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Erro ao abrir janela de autenticação.'
+        });
+    }
+});
+
+/**
+ * POST /api/auth/save
+ * Salva a sessão atual do navegador aberto imediatamente.
+ */
+app.post('/api/auth/save', async (req, res) => {
+    try {
+        const result = await saveCurrentAuthSession();
+        res.json(result);
+    } catch (error) {
+        console.error('Erro ao salvar sessão ativa:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Erro ao salvar sessão.'
+        });
+    }
+});
+
+/**
+ * POST /api/auth/cancel
+ * Cancela a sessão de autenticação em andamento fechando o navegador.
+ */
+app.post('/api/auth/cancel', async (req, res) => {
+    try {
+        const result = await cancelAuthSession();
+        res.json(result);
+    } catch (error) {
+        console.error('Erro ao cancelar autenticação:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Erro ao cancelar autenticação.'
+        });
+    }
+});
 
 // ============================================================================
 // ROTAS DO MODELO SEMÂNTICO & EXPLORADOR PBIX

@@ -569,6 +569,11 @@
     // ========================================================================
 
     document.addEventListener('DOMContentLoaded', function() {
+        // Inicializa a verificação de sessão do LinkedIn no carregamento
+        if (typeof window.checkLinkedInAuth === 'function') {
+            window.checkLinkedInAuth(false);
+        }
+
         const form = document.getElementById('scrape-form');
         if (!form) return;
         form.addEventListener('submit', async function(e) {
@@ -810,4 +815,197 @@
         if (progressPercent) progressPercent.textContent = percent + '%';
         if (progressBarFill) progressBarFill.style.width = percent + '%';
     }
+
+    // ========================================================================
+    // GESTÃO DE AUTENTICAÇÃO LINKEDIN (auth.js & VERIFICAÇÃO)
+    // ========================================================================
+    let authPollingTimer = null;
+
+    /**
+     * Atualiza os elementos visuais do status de autenticação.
+     * 
+     * @param {string} state - 'checking' | 'authenticated' | 'warning' | 'unauthenticated'
+     * @param {string} badgeText - Texto curto para o badge
+     * @param {string} detailText - Texto descritivo / data de expiração / erro
+     */
+    function updateAuthUi(state, badgeText, detailText) {
+        const badge = document.getElementById('auth-status-badge');
+        const detail = document.getElementById('auth-status-detail');
+        if (!badge || !detail) return;
+
+        badge.className = 'status-badge';
+        if (state === 'checking') {
+            badge.classList.add('checking-badge');
+            badge.innerHTML = '<span class="status-dot dot-gray"></span> ' + escapeHtml(badgeText || 'Verificando...');
+        } else if (state === 'authenticated') {
+            badge.classList.add('success-badge');
+            badge.innerHTML = '<span class="status-dot dot-green"></span> ' + escapeHtml(badgeText || 'Autenticado');
+        } else if (state === 'warning') {
+            badge.classList.add('warning-badge');
+            badge.innerHTML = '<span class="status-dot dot-yellow"></span> ' + escapeHtml(badgeText || 'Atenção');
+        } else {
+            badge.classList.add('error-badge');
+            badge.innerHTML = '<span class="status-dot dot-red"></span> ' + escapeHtml(badgeText || 'Não autenticado');
+        }
+
+        detail.textContent = detailText || '';
+    }
+
+    /**
+     * Alterna o visual do banner de login em andamento
+     */
+    function setAuthRunningUi(isRunning) {
+        const banner = document.getElementById('auth-running-banner');
+        const btnRun = document.getElementById('btn-run-auth');
+        if (banner) {
+            if (isRunning) banner.classList.remove('hidden');
+            else banner.classList.add('hidden');
+        }
+        if (btnRun) {
+            if (isRunning) {
+                btnRun.disabled = true;
+                btnRun.innerHTML = '<span class="btn-text">⏳ Aguardando Login...</span>';
+            } else {
+                btnRun.disabled = false;
+                btnRun.innerHTML = '<span class="btn-text">⚡ Executar auth.js</span>';
+            }
+        }
+    }
+
+    /**
+     * Consulta o status do auth.json ou realiza teste ao vivo no LinkedIn.
+     * 
+     * @param {boolean} [isLiveTest=false] - Se true, faz a requisição ativa para testar a sessão no LinkedIn.
+     */
+    window.checkLinkedInAuth = async function(isLiveTest = false) {
+        const btnCheck = document.getElementById('btn-check-auth');
+        if (btnCheck) {
+            btnCheck.disabled = true;
+            btnCheck.innerHTML = '<span class="btn-text">⏳ Testando...</span>';
+        }
+
+        updateAuthUi('checking', 'Verificando...', isLiveTest ? 'Testando conexão e sessão ao vivo no LinkedIn via Chromium...' : 'Verificando arquivo local auth.json...');
+
+        try {
+            if (isLiveTest) {
+                // Teste de autenticação ao vivo no LinkedIn
+                const resp = await fetch('/api/auth/verify', { method: 'POST' });
+                const data = await resp.json();
+
+                if (data.authenticated) {
+                    if (data.warning) {
+                        updateAuthUi('warning', 'Válido Local', data.reason);
+                    } else {
+                        const userText = data.userName ? ` (${data.userName})` : '';
+                        const expText = data.fileInfo && data.fileInfo.expiresAt ? ` - Expira em ${data.fileInfo.expiresAt}` : '';
+                        updateAuthUi('authenticated', 'Autenticado', `Sessão ativa e confirmada no LinkedIn${userText}${expText}.`);
+                    }
+                } else {
+                    updateAuthUi('unauthenticated', 'Não Autenticado', data.reason || 'Sessão inválida ou expirada no LinkedIn.');
+                }
+            } else {
+                // Verificação local rápida
+                const resp = await fetch('/api/auth/status');
+                const data = await resp.json();
+
+                if (data.inProgress) {
+                    setAuthRunningUi(true);
+                } else {
+                    setAuthRunningUi(false);
+                }
+
+                if (data.valid && !data.isExpired) {
+                    updateAuthUi('authenticated', 'Autenticado (Local)', `Arquivo auth.json válido (expira em ${data.expiresAt || 'data futura'}). Clique em "Verificar Sessão" para validar ao vivo.`);
+                } else if (data.exists && data.isExpired) {
+                    updateAuthUi('unauthenticated', 'Sessão Expirada', `A sessão em auth.json expirou em ${data.expiresAt}. Clique em "Executar auth.js" para renovar.`);
+                } else if (data.exists && !data.hasLiAt) {
+                    updateAuthUi('unauthenticated', 'auth.json Incompleto', 'O cookie de login li_at não foi encontrado em auth.json. Clique em "Executar auth.js".');
+                } else {
+                    updateAuthUi('unauthenticated', 'Sem Sessão', 'Arquivo auth.json não encontrado. Clique em "Executar auth.js" para realizar o primeiro login.');
+                }
+            }
+        } catch (err) {
+            console.error('Erro ao verificar autenticação:', err);
+            updateAuthUi('warning', 'Erro ao Verificar', 'Não foi possível contatar o servidor: ' + err.message);
+        } finally {
+            if (btnCheck) {
+                btnCheck.disabled = false;
+                btnCheck.innerHTML = '<span class="btn-text">🔍 Verificar Sessão</span>';
+            }
+        }
+    };
+
+    /**
+     * Dispara a execução do auth.js abrindo o navegador interativo.
+     */
+    window.startLinkedInAuth = async function() {
+        const btnRun = document.getElementById('btn-run-auth');
+        if (btnRun) {
+            btnRun.disabled = true;
+            btnRun.innerHTML = '<span class="btn-text">Iniciando...</span>';
+        }
+
+        try {
+            const resp = await fetch('/api/auth/start', { method: 'POST' });
+            const data = await resp.json();
+
+            if (data.success) {
+                setAuthRunningUi(true);
+                updateAuthUi('checking', 'Login Aberto', 'Uma janela do navegador foi aberta. Faça login com sua conta do LinkedIn.');
+
+                // Polling periódico para acompanhar conclusão automática do login
+                if (authPollingTimer) clearInterval(authPollingTimer);
+                authPollingTimer = setInterval(async () => {
+                    try {
+                        const statusResp = await fetch('/api/auth/status');
+                        const statusData = await statusResp.json();
+                        if (!statusData.inProgress) {
+                            clearInterval(authPollingTimer);
+                            authPollingTimer = null;
+                            setAuthRunningUi(false);
+                            window.checkLinkedInAuth(false);
+                        }
+                    } catch (e) {}
+                }, 2000);
+            } else {
+                alert('Erro ao iniciar autenticação: ' + (data.error || 'Erro desconhecido.'));
+                setAuthRunningUi(false);
+            }
+        } catch (err) {
+            console.error('Falha ao acionar auth.js:', err);
+            alert('Falha ao acionar auth.js: ' + err.message);
+            setAuthRunningUi(false);
+        }
+    };
+
+    /**
+     * Força o salvamento imediato da sessão do navegador aberto.
+     */
+    window.saveLinkedInAuthNow = async function() {
+        try {
+            const resp = await fetch('/api/auth/save', { method: 'POST' });
+            const data = await resp.json();
+            if (authPollingTimer) clearInterval(authPollingTimer);
+            setAuthRunningUi(false);
+            setTimeout(() => {
+                window.checkLinkedInAuth(false);
+            }, 1000);
+        } catch (err) {
+            alert('Erro ao salvar sessão: ' + err.message);
+        }
+    };
+
+    /**
+     * Cancela o processo de login interativo e fecha o navegador aberto.
+     */
+    window.cancelLinkedInAuth = async function() {
+        try {
+            await fetch('/api/auth/cancel', { method: 'POST' });
+            if (authPollingTimer) clearInterval(authPollingTimer);
+            setAuthRunningUi(false);
+            window.checkLinkedInAuth(false);
+        } catch (err) {
+            console.error('Erro ao cancelar:', err);
+        }
+    };
 })();

@@ -18,6 +18,47 @@
 
     <main class="container">
         <section class="card-panel">
+            <!-- Painel de Gestão da Sessão LinkedIn -->
+            <div class="auth-bar" id="auth-bar">
+                <div class="auth-bar-info">
+                    <div class="auth-badge-row">
+                        <span class="auth-icon">🔑</span>
+                        <strong class="auth-title">Sessão LinkedIn:</strong>
+                        <span id="auth-status-badge" class="status-badge checking-badge">
+                            <span class="status-dot dot-gray"></span> Verificando...
+                        </span>
+                    </div>
+                    <p id="auth-status-detail" class="auth-detail-text">Consultando integridade do arquivo auth.json...</p>
+                </div>
+                <div class="auth-bar-actions">
+                    <button type="button" id="btn-check-auth" class="secondary-btn btn-sm auth-btn" onclick="checkLinkedInAuth(true)" title="Verificar se a sessão está autenticada e ativa no LinkedIn">
+                        <span class="btn-text">🔍 Verificar Sessão</span>
+                    </button>
+                    <button type="button" id="btn-run-auth" class="primary-btn btn-sm auth-btn" onclick="startLinkedInAuth()" title="Abrir navegador para efetuar login no LinkedIn e salvar no auth.json">
+                        <span class="btn-text">⚡ Executar auth.js</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Banner Informativo quando o auth.js estiver em execução -->
+            <div id="auth-running-banner" class="auth-running-banner hidden">
+                <div class="auth-running-content">
+                    <div class="spinner-sm"></div>
+                    <div class="auth-running-desc">
+                        <strong>Janela de login aberta no navegador</strong>
+                        <p>Faça login normalmente na tela do LinkedIn. A sessão será capturada e salva automaticamente no arquivo <code>auth.json</code>.</p>
+                    </div>
+                </div>
+                <div class="auth-running-actions">
+                    <button type="button" class="primary-btn btn-sm" onclick="saveLinkedInAuthNow()">
+                        Salvar Sessão Agora
+                    </button>
+                    <button type="button" class="secondary-btn btn-sm" onclick="cancelLinkedInAuth()">
+                        Cancelar
+                    </button>
+                </div>
+            </div>
+
             <div class="tabs" role="tablist">
                 <button type="button" id="tab-single" class="tab-btn active" data-target="single" role="tab" aria-selected="true" onclick="switchTab('single')">Perfil Único</button>
                 <button type="button" id="tab-batch" class="tab-btn" data-target="batch" role="tab" aria-selected="false" onclick="switchTab('batch')">Em Lote (Batch)</button>

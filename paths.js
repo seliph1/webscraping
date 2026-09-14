@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ============================================================================
  * UTILITÁRIO DE CAMINHOS DINÂMICOS & DIRETÓRIOS EXTERNOS
  * ============================================================================
@@ -106,9 +106,17 @@ function getChromiumExecutablePath() {
             const items = fs.readdirSync(browsersRoot);
             for (const item of items) {
                 if (item.startsWith('chromium-') && !item.includes('headless')) {
-                    const candidate = path.join(browsersRoot, item, 'chrome-win64', 'chrome.exe');
-                    if (fs.existsSync(candidate)) {
-                        return candidate;
+                    const winCandidate = path.join(browsersRoot, item, 'chrome-win64', 'chrome.exe');
+                    if (fs.existsSync(winCandidate)) {
+                        return winCandidate;
+                    }
+                    const linuxCandidate = path.join(browsersRoot, item, 'chrome-linux', 'chrome');
+                    if (fs.existsSync(linuxCandidate)) {
+                        return linuxCandidate;
+                    }
+                    const macCandidate = path.join(browsersRoot, item, 'chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium');
+                    if (fs.existsSync(macCandidate)) {
+                        return macCandidate;
                     }
                 }
             }
