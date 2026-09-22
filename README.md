@@ -1,6 +1,30 @@
 # LinkedIn Profile Scraper & Semantic Model Explorer
+# LinkedIn Profile Scraper & Base de Alunos CEFET-RJ
 
 Aplicação completa para extração automatizada de perfis do LinkedIn em PDF e JSON, com interface web para scraping individual/em lote, consolidação semântica de dados e explorador de modelos do Power BI (.pbix VertiPaq/XPress9).
+Aplicação completa para extração estruturada de perfis do LinkedIn em PDF e JSON, com interface visual para scraping individual e em lote, consolidação de listas de alunos de Administração e outros cursos do CEFET-RJ, extração não-inferida de experiências profissionais e exportação direta em CSV para Excel.
+
+---
+
+## 📋 Funcionalidades Principais
+
+1. **Base Unificada de Alunos & Links do LinkedIn:**
+   - Cruza automaticamente as planilhas `Alunos de ADM - 2026-08-28.xlsx` e `lista geral linkedin 2026-08-31.xlsx`.
+   - Ordenação estrita das colunas: `Matrícula - Nome do Aluno - Data de nascimento - Linkedin`.
+   - Identifica se o perfil já foi coletado em `dados_json/` ou se está pendente.
+   - Botão para transferir todos os links pendentes diretamente para o processamento em lote.
+
+2. **Opções Flexíveis de Execução:**
+   - **Modo Headless (Ativar/Desativar):** Permite executar em segundo plano (padrão) ou com a janela do navegador Chromium visível na tela para acompanhar cada clique e download ao vivo.
+   - **Intervalo de Pausa Customizável:** Configuração de tempo de espera (em segundos) entre as requisições consecutivas no scraping em lote para evitar bloqueios ou rate limit do LinkedIn.
+
+3. **Extração Fiel de Experiências Profissionais (Sem Inferências):**
+   - Extrai **todas** as experiências do candidato (empresas, cargos, estágios, períodos de início e término exatamente como aparecem no perfil).
+   - Sem suposições, descarte ou inferências heurísticas.
+   - **Exportação CSV em Célula Única:** Gera arquivo CSV com `Matrícula;Nome do Aluno;Data de nascimento;Linkedin;Experiência Profissional`, onde todo o histórico profissional fica preservado em uma única célula multilinhas compatível com Excel, Google Sheets e Power BI (codificação UTF-8 BOM).
+
+4. **Preservação de Bibliotecas do Power BI:**
+   - As bibliotecas de decodificação VertiPaq / XPress9 (`pbixDecoder.js` e `pbixHandler.js`) e endpoints de API permanecem preservados no backend para futura integração com novos modelos do Power BI.
 
 ---
 
@@ -46,6 +70,7 @@ npm run auth
 1. Uma janela do navegador será aberta no LinkedIn.
 2. Faça login normalmente com suas credenciais.
 3. Após o login completo, volte ao terminal e pressione **ENTER**.
+3. Após o login completo, volte ao terminal e pressione **ENTER** (ou utilize o botão "Salvar Sessão" na barra de autenticação da interface).
 4. O arquivo `auth.json` será gerado com o estado da sessão (cookies e tokens).
 
 > ⚠️ **Importante**: O arquivo `auth.json` contém suas credenciais de sessão e já está configurado no `.gitignore` para não ser versionado publicamente.
@@ -59,10 +84,12 @@ Você pode executar o aplicativo de **duas formas**:
 ### Modo 1: Aplicativo Nativo de Desktop (Electron) — 2 Cliques!
 Basta dar um duplo clique em um dos arquivos executáveis na raiz da pasta:
 - 🚀 **`Iniciar-App.vbs`** *(Recomendado no Windows)*: Abre o aplicativo diretamente em uma janela nativa do Electron, **sem abrir nenhuma tela preta de terminal/PowerShell**.
+- 🚀 **`Iniciar-App.vbs`** *(Recomendado no Windows)*: Abre o aplicativo diretamente em uma janela nativa do Electron, **sem abrir nenhuma tela preta de terminal**.
 - 🛠️ **`Iniciar.bat`**: Abre o aplicativo Electron mostrando o terminal com os logs do servidor em segundo plano.
 - 🐧 **`iniciar.sh`**: Para execução direta em ambientes Linux (`./iniciar.sh`).
 
 Ou, se preferir iniciar pelo terminal:
+Ou, pelo terminal:
 ```bash
 npm start
 ```
@@ -73,6 +100,8 @@ Se quiser rodar apenas o servidor Express tradicional e acessar pelo seu navegad
 npm run web
 ```
 Acesse: 👉 **[http://localhost:3000](http://localhost:3000)**
+
+---
 
 ## 📦 Versão Pré-Compilada (Distribuição Standalone)
 
@@ -86,6 +115,7 @@ Os binários compilados ficam localizados na pasta `dist/`:
 - **Tudo incluso:** O navegador Chromium do Playwright já está integrado diretamente ao pacote. A máquina de destino não precisa baixar nada na internet.
 - **Pastas Externas:** Ao ser executado, as pastas `dados_json` e `pdfs` são salvas no mesmo diretório do executável, permitindo que você visualize e copie os arquivos diretamente pelo Windows Explorer.
 - **Pastas e Arquivos Externos:** Ao ser executado, as pastas `dados_json` e `pdfs`, bem como os arquivos `auth.json` (credenciais da sessão) e `egressos.pbix` (modelo do Power BI) ficam no mesmo diretório do executável. Você pode substituir o arquivo `.pbix` por outro modelo atualizado ou copiar o `auth.json` diretamente pelo Windows Explorer.
+- **Pastas e Arquivos Externos:** Ao ser executado, as pastas `dados_json` e `pdfs`, bem como os arquivos `auth.json` (credenciais da sessão) e `egressos.pbix` ficam no mesmo diretório do executável.
 
 ### 2. Pasta Portátil Descompactada (`win-unpacked`)
 - **Pasta:** `dist/win-unpacked/`
@@ -126,6 +156,9 @@ Para recompilar o projeto após alterações de código, utilize os scripts:
 ├── auth.js               # Script para autenticação interativa e geração do auth.json
 ├── script.js             # Motor de scraping com Playwright e parsing de PDFs
 ├── server.js             # Servidor Express com API REST e streaming SSE
+├── alumniHandler.js      # Gerenciador da base consolidada de alunos, merge de planilhas e exportação CSV
+├── script.js             # Motor de scraping com Playwright, controle de headless/pausa e parsing de PDFs
+├── server.js             # Servidor Express com API REST, streaming SSE e rotas da base de alunos
 ├── paths.js              # Centralizador de caminhos externos e browsers embutidos
 ├── main.js               # Processo principal do Electron (janela nativa)
 ├── Iniciar-App.vbs        # Inicializador silencioso sem janela de terminal (Windows)
@@ -133,9 +166,13 @@ Para recompilar o projeto após alterações de código, utilize os scripts:
 ├── iniciar.sh            # Inicializador para sistemas Linux / macOS
 ├── pbixHandler.js        # Consolidador semântico de dados e exportador CSV
 ├── pbixDecoder.js        # Decodificador VertiPaq / XPress9 (WASM) para arquivos .pbix
+├── pbixHandler.js        # Utilitários e rotas mantidas para suporte futuro a modelos Power BI
+├── pbixDecoder.js        # Decodificador VertiPaq / XPress9 para arquivos .pbix
 ├── package.json          # Dependências e scripts de execução multiplataforma
 ├── egressos.pbix         # Arquivo do modelo Power BI integrado
 ├── egressos.pbix         # Arquivo do modelo Power BI integrado (externo ao .exe)
+├── Alunos de ADM...xlsx  # Planilha de alunos de Administração com Matrícula e Data de Nascimento
+├── lista geral...xlsx    # Planilha consolidada com nomes e links de perfis do LinkedIn
 ├── auth.json             # Sessão autenticada do LinkedIn (externo ao .exe)
 ├── dist/                 # Executáveis e pacotes pré-compilados para distribuição
 ├── browsers/             # Binários locais do Chromium para empacotamento

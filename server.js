@@ -32,7 +32,15 @@ const {
     isAuthRunning
 } = require('./auth');
 
+const {
+    getStudentsOverview,
+    exportStudentsToCsv,
+    loadUnifiedStudents,
+    getPendingAdmUrls
+} = require('./alumniHandler');
+
 const { PDFS_DIR, JSON_DIR, PBIX_PATH } = require('./paths');
+
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -46,8 +54,17 @@ const PBIX_FILE_PATH = process.env.PBIX_FILE_PATH || PBIX_PATH;
 
 // Middlewares para parsing de JSON e serviço de diretórios estáticos
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+    etag: false,
+    maxAge: 0,
+    setHeaders: (res) => {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+    }
+}));
 app.use('/downloads', express.static(PDFS_DIR));
+app.use('/downloads', express.static(JSON_DIR));
 app.use('/json', express.static(JSON_DIR));
 
 // ============================================================================
@@ -299,6 +316,96 @@ app.get('/api/pbix/export-real-csv', async (req, res) => {
 });
 
 // ============================================================================
+// ROTAS DA BASE DE ALUNOS & LINKS (PLANILHAS ADM & LINKEDIN)
+// ============================================================================
+
+/**
+ * GET /api/students/list
+ * Retorna a lista unificada de links dos alunos com ordenação estrita:
+ * Matrícula - Nome do Aluno - Data de nascimento - Linkedin,
+ * incluindo status de coleta e filtros opcionais.
+ */
+app.get('/api/students/list', (req, res) => {
+    try {
+        const { query, onlyAdm, status } = req.query;
+        const overview = getStudentsOverview({
+            query,
+            onlyAdm: onlyAdm === 'true',
+            status
+        });
+        res.json({
+            success: true,
+            ...overview
+        });
+    } catch (error) {
+        console.error('Erro ao consultar lista de alunos:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Erro ao carregar lista consolidada de alunos.'
+        });
+    }
+});
+
+/**
+ * GET /api/students/export-csv
+ * Gera e faz o download do arquivo CSV consolidado contendo:
+ * Matrícula;Nome do Aluno;Data de nascimento;Linkedin;Experiência 1;Período 1;...
+ * Por padrão, exporta EXCLUSIVAMENTE os alunos que possuem matrícula associada.
+ */
+app.get('/api/students/export-csv', (req, res) => {
+    try {
+        const csvPath = exportStudentsToCsv();
+        res.download(csvPath, 'formados_adm_linkedin_experiencias.csv');
+    } catch (error) {
+        console.error('Erro ao exportar CSV de Formados:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Erro ao exportar CSV de formados em ADM.'
+        });
+    }
+});
+
+/**
+ * GET /api/students/pending-adm-urls
+ * Retorna a lista e a contagem de URLs dos perfis de ADM (com matrícula) pendentes de coleta.
+ */
+app.get('/api/students/pending-adm-urls', (req, res) => {
+    try {
+        const data = getPendingAdmUrls();
+        res.json({
+            success: true,
+            ...data
+        });
+    } catch (error) {
+        console.error('Erro ao consultar URLs pendentes de ADM:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Erro ao carregar URLs pendentes de ADM.'
+        });
+    }
+});
+
+/**
+ * POST /api/students/sync
+ * Força a sincronização/releitura das planilhas e dos dados salvos no disco.
+ */
+app.post('/api/students/sync', (req, res) => {
+    try {
+        loadUnifiedStudents(true);
+        res.json({
+            success: true,
+            message: 'Base de dados consolidada sincronizada com sucesso.'
+        });
+    } catch (error) {
+        console.error('Erro ao sincronizar base de alunos:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Erro ao sincronizar base de alunos.'
+        });
+    }
+});
+
+// ============================================================================
 // ROTAS DE SCRAPING DO LINKEDIN (PLAYWRIGHT)
 // ============================================================================
 
@@ -308,7 +415,7 @@ app.get('/api/pbix/export-real-csv', async (req, res) => {
  * Salva o currículo em PDF e extrai os dados estruturados em JSON.
  */
 app.post('/api/scrape', async (req, res) => {
-    let { url } = req.body;
+    let { url, headless } = req.body;
     if (!url || typeof url !== 'string' || url.trim().length === 0) {
         return res.status(400).json({
             success: false,
@@ -317,8 +424,10 @@ app.post('/api/scrape', async (req, res) => {
     }
     url = normalizeLinkedInUrl(url);
     try {
-        console.log('Iniciando scraping para: ' + url);
-        const fileName = await scrapeProfile(url);
+        console.log('Iniciando scraping para: ' + url + ' (headless=' + (headless !== false) + ')');
+        const fileName = await scrapeProfile(url, {
+            headless: headless !== undefined ? !!headless : true
+        });
         console.log('Scraping concluído com sucesso. Arquivo: ' + fileName);
         res.json({
             success: true,
@@ -340,7 +449,7 @@ app.post('/api/scrape', async (req, res) => {
  * Fornece feedback em tempo real para a barra de progresso e itens da fila no frontend.
  */
 app.post('/api/scrape-batch-stream', async (req, res) => {
-    const { urls } = req.body;
+    const { urls, headless, delaySeconds } = req.body;
     if (!urls || !Array.isArray(urls) || urls.length === 0) {
         return res.status(400).json({
             success: false,
@@ -364,13 +473,18 @@ app.post('/api/scrape-batch-stream', async (req, res) => {
     };
 
     try {
-        console.log('Iniciando streaming em lote para ' + normalizedUrls.length + ' perfis.');
+        console.log(`Iniciando streaming em lote para ${normalizedUrls.length} perfis (headless=${headless !== false}, delay=${delaySeconds || 2}s).`);
         sendEvent({ type: 'start', total: normalizedUrls.length, urls: normalizedUrls });
+
+        const options = {
+            headless: headless !== undefined ? !!headless : true,
+            delaySeconds: typeof delaySeconds === 'number' && delaySeconds >= 0 ? delaySeconds : 2
+        };
 
         // Executa o processamento em lote emitindo eventos de progresso item a item
         const results = await scrapeBatch(normalizedUrls, (eventData) => {
             sendEvent({ type: 'progress', ...eventData });
-        });
+        }, options);
 
         console.log('Scraping em lote finalizado.');
         sendEvent({
@@ -396,7 +510,7 @@ app.post('/api/scrape-batch-stream', async (req, res) => {
  * Endpoint legado síncrono para processamento em lote sem streaming.
  */
 app.post('/api/scrape-batch', async (req, res) => {
-    const { urls } = req.body;
+    const { urls, headless, delaySeconds } = req.body;
     if (!urls || !Array.isArray(urls) || urls.length === 0) { 
         return res.status(400).json({
             success: false,
@@ -406,7 +520,11 @@ app.post('/api/scrape-batch', async (req, res) => {
     const normalizedUrls = urls.map(u => normalizeLinkedInUrl(u)).filter(u => u.length > 0);
     try {
         console.log('Iniciando scraping em lote para ' + normalizedUrls.length + ' perfis.');
-        const results = await scrapeBatch(normalizedUrls);
+        const options = {
+            headless: headless !== undefined ? !!headless : true,
+            delaySeconds: typeof delaySeconds === 'number' && delaySeconds >= 0 ? delaySeconds : 2
+        };
+        const results = await scrapeBatch(normalizedUrls, null, options);
         console.log('Scraping em lote concluído.');
         res.json({
             success: true,
@@ -423,6 +541,7 @@ app.post('/api/scrape-batch', async (req, res) => {
         });
     }
 });
+
 
 // ============================================================================
 // INICIALIZAÇÃO DO SERVIDOR

@@ -626,6 +626,8 @@ function getAreasList() {
     return _areasList;
 }
 
+
+// TODO: desconsiderar tratamento de dados
 const areaDefinitions = [
     {
         area: 'Tecnologia da Informação',
@@ -828,6 +830,15 @@ function getBaseBiData() {
             // Categorização contextual de área de atuação profissional
             // Classificação e validação da Área de Atuação Econômica conforme local_api/areas.json
             const area = determineEconomicArea(cargo, headline, empresa);
+
+
+            // Critério para pessoas que trabalham em multiplas empresas 
+            // Ou cargos diferentes dentro da mesma empresa
+            // Linhas duplicadas para acumulos de cargo
+
+            // Histórico dos cargos (caso apareça mais de um cargo no card de empresa)
+            
+
 
             records.push({
                 'Nomes': name || 'Não informado',

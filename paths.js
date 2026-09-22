@@ -68,6 +68,24 @@ if (!fs.existsSync(PBIX_PATH) && fs.existsSync(defaultInternalPbix)) {
     }
 }
 
+// Provisiona as planilhas de alunos e links para o diretório externo caso ainda não existam
+const defaultSpreadsheets = [
+    'Alunos de ADM - 2026-08-28.xlsx',
+    'lista geral linkedin 2026-08-31.xlsx'
+];
+for (const sheetName of defaultSpreadsheets) {
+    const externalSheet = path.join(EXTERNAL_BASE_DIR, sheetName);
+    const internalSheet = path.join(__dirname, sheetName);
+    if (!fs.existsSync(externalSheet) && fs.existsSync(internalSheet)) {
+        try {
+            fs.copyFileSync(internalSheet, externalSheet);
+            console.log('Planilha inicial provisionada em:', externalSheet);
+        } catch (e) {
+            console.warn('Aviso ao provisionar planilha externa:', e.message);
+        }
+    }
+}
+
 /**
  * Retorna o caminho dos navegadores embutidos do Playwright
  */

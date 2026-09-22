@@ -115,6 +115,24 @@ function extractLinkedInUrlFromText(text) {
 }
 
 /**
+ * Extrai fielmente todas as experiências profissionais contidas no perfil
+ * (cargos, empresas, datas de entrada e saída, estágios, descrições verbatim),
+ * sem inferência ou descarte de dados.
+ * 
+ * @param {string} rawText - Texto bruto do PDF
+ * @returns {string} Bloco completo de experiências
+ */
+function extractExperienceFromText(rawText) {
+    if (!rawText || typeof rawText !== 'string') return '';
+    const cleaned = rawText.replace(/Page\s+\d+\s+of\s+\d+/gi, '').replace(/\r\n/g, '\n');
+    const match = cleaned.match(/(?:^|\n)(?:Experiência|Experience|Expérience|Experiencia)\s*\n([\s\S]*?)(?=\n(?:Formação acadêmica|Formação|Formation|Educação|Education|Educación|Competências|Skills|Compétences|Competencias|Licenças e certificados|Licenses & certifications|Licences et certifications|Idiomas|Languages|Langues|Cursos|Courses|Recomendações|Recommendations|Projetos|Projects|Projets|Publicações|Publications|Prêmios|Honors & awards|Organizações|Organizations)|$)/i);
+    if (match && match[1]) {
+        return match[1].trim();
+    }
+    return '';
+}
+
+/**
  * Lê o PDF salvo, extrai o texto com 'pdf-parse', reconstrói a URL se necessário,
  * limpa as quebras de linha com hífen e salva os dados estruturados em JSON.
  * 
@@ -123,6 +141,7 @@ function extractLinkedInUrlFromText(text) {
  * @returns {Promise<Object|null>} { jsonFileName, jsonFilePath }
  */
 async function extractAndSaveJson(pdfFilePath, metadata) {
+
     try {
         const dataBuffer = fs.readFileSync(pdfFilePath);
         let rawText = '';
@@ -159,6 +178,9 @@ async function extractAndSaveJson(pdfFilePath, metadata) {
             .map(line => line.trim())
             .filter(line => line.length > 0 && !/^Page\s+\d+\s+of\s+\d+/i.test(line));
 
+        // Extração fiel de experiências profissionais sem inferência de dados
+        const experienciaProfissional = extractExperienceFromText(rawText);
+
         const resultJson = {
             profileName: metadata.personName,
             url: resolvedUrl,
@@ -169,9 +191,11 @@ async function extractAndSaveJson(pdfFilePath, metadata) {
                 total_blocos: textBlocks.length,
                 total_caracteres: rawText.length
             },
+            experienciaProfissional: experienciaProfissional,
             rawText: rawText,
             rawBlocks: textBlocks
         };
+
 
         if (!fs.existsSync(jsonFolder)) {
             fs.mkdirSync(jsonFolder, { recursive: true });
@@ -190,11 +214,44 @@ async function extractAndSaveJson(pdfFilePath, metadata) {
 }
 
 /**
- * Realiza o scraping de um único perfil do LinkedIn dentro de um contexto existente do Playwright.
+ * Salva os dados estruturados do perfil diretamente em JSON na pasta dados_json/.
+ * 
+ * @param {Object} metadata - { personName, url, dateStr, fileName, experienciaProfissional }
+ * @returns {Object} { jsonFileName, jsonFilePath }
+ */
+function saveProfileDirectJson(metadata) {
+    if (!fs.existsSync(jsonFolder)) {
+        fs.mkdirSync(jsonFolder, { recursive: true });
+    }
+
+    const jsonFileName = metadata.fileName;
+    const jsonFilePath = path.join(jsonFolder, jsonFileName);
+
+    const resultJson = {
+        profileName: metadata.personName,
+        url: metadata.url,
+        dataScraping: metadata.dateStr,
+        pdfFile: null,
+        meta: {
+            modo_extracao: 'DOM_DIRECT',
+            total_caracteres: (metadata.experienciaProfissional || '').length
+        },
+        experienciaProfissional: metadata.experienciaProfissional || '',
+        rawText: metadata.experienciaProfissional || ''
+    };
+
+    fs.writeFileSync(jsonFilePath, JSON.stringify(resultJson, null, 2), 'utf-8');
+    console.log('JSON gerado com sucesso: ' + jsonFileName);
+    return { jsonFileName, jsonFilePath };
+}
+
+/**
+ * Realiza o scraping de um único perfil do LinkedIn dentro de um contexto existente do Playwright,
+ * extraindo as informações profissionais diretamente do DOM da página sem depender de PDF.
  * 
  * @param {import('playwright').BrowserContext} context - Contexto do navegador com autenticação
  * @param {string} rawUrl - URL do perfil a ser acessado
- * @returns {Promise<string>} Nome do arquivo PDF gerado
+ * @returns {Promise<string>} Nome do arquivo JSON gerado
  */
 async function scrapeSingleProfile(context, rawUrl) {
     const url = normalizeLinkedInUrl(rawUrl);
@@ -203,8 +260,10 @@ async function scrapeSingleProfile(context, rawUrl) {
     page.setDefaultNavigationTimeout(30000);
 
     try {
-        console.log('Acessando: ' + url);
+        console.log('Acessando perfil: ' + url);
+        // Primeiro acessa a página do perfil para validar existência e extrair nome
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForTimeout(1000);
 
         // Detecção de página não encontrada (perfil inexistente ou removido - erro 404)
         const isNotFound = await page.evaluate(() => {
@@ -218,22 +277,6 @@ async function scrapeSingleProfile(context, rawUrl) {
             console.log('[PULANDO] Página não encontrada (404): ' + url);
             throw new Error('Página não encontrada (404)');
         }
-
-        // Clica no botão "Mais" no cabeçalho do perfil
-        const moreBtn = page.getByTestId('lazy-column').getByRole('button', { name: 'Mais' });
-        await moreBtn.waitFor({ state: 'visible', timeout: 10000 });
-        await moreBtn.click();
-
-        // Configura a captura do evento de download antes de clicar no botão
-        const page1Promise = page.waitForEvent('popup', { timeout: 15000 }).catch(() => null);
-        const downloadPromise = page.waitForEvent('download', { timeout: 25000 });
-
-        // Clica em "Salvar como PDF"
-        const savePdfBtn = page.getByText('Salvar como PDF');
-        await savePdfBtn.waitFor({ state: 'visible', timeout: 10000 });
-        await savePdfBtn.click();
-
-        const download = await downloadPromise;
 
         // Extração do nome da pessoa a partir do título da página ou elemento H1
         let personName = 'Perfil';
@@ -250,36 +293,88 @@ async function scrapeSingleProfile(context, rawUrl) {
                 }
             }
             if (!personName || personName.toLowerCase() === 'linkedin') {
-                await page.waitForSelector('h1', { state: 'visible', timeout: 3000 }).catch(() => {});
-                personName = await page.locator('h1').first().innerText();
+                const h1 = await page.locator('h1').first().innerText({ timeout: 3000 }).catch(() => '');
+                if (h1 && h1.trim()) personName = h1.trim();
             }
-            personName = personName.trim().replace(/[^a-zA-Z0-9\u00C0\u00FF\s]/g, '');
-            if (!personName) personName = 'Perfil';
+            personName = personName.trim().replace(/[^\p{L}\p{N}\s]/gu, '');
+            if (!personName || personName.toLowerCase() === 'linkedin') {
+                let rawSlug = url.split('/').pop().replace(/-[0-9a-f]+$/, '');
+                try { rawSlug = decodeURIComponent(rawSlug); } catch (e) {}
+                const slug = rawSlug.replace(/-/g, ' ');
+                personName = slug.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+            }
         } catch (e) {
-            console.log('Não foi possível extrair o nome. Usando nome padrão.');
+            console.log('Não foi possível extrair o nome. Usando fallback.');
         }
 
-        // Geração do nome do arquivo com timestamp e sufixo único
+        // Navega diretamente para a seção completa de experiências do LinkedIn (/details/experience/)
+        const detailsExpUrl = url.replace(/\/+$/, '') + '/details/experience/';
+        console.log('Acessando experiências completas via: ' + detailsExpUrl);
+        await page.goto(detailsExpUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForTimeout(1500);
+
+        // Extrai fielmente todas as experiências do DOM
+        const experienciaProfissional = await page.evaluate(() => {
+            const main = document.querySelector('main') || document.body;
+            if (!main) return '';
+
+            const sections = Array.from(main.querySelectorAll('section'));
+            let expSection = sections.find(s => {
+                const h = s.querySelector('h1, h2, h3, span.visually-hidden');
+                const txt = (h ? h.innerText : (s.innerText || '')).slice(0, 80);
+                return /experiência|experience/i.test(txt);
+            });
+
+            if (!expSection && window.location.href.includes('/details/experience/')) {
+                expSection = sections[0];
+            }
+
+            if (!expSection) return '';
+
+            let text = expSection.innerText || '';
+
+            // Se for estado vazio (sem experiências cadastradas)
+            if (text.includes('Nada para ver por enquanto') || 
+                text.includes('Nothing to see for now') || 
+                text.includes('Nenhuma experiência adicionada')) {
+                return '';
+            }
+
+            // Remove o cabeçalho 'Experiência' / 'Experience'
+            text = text.replace(/^(Experiência|Experience)\s*\n+/i, '').trim();
+
+            // Remove sugestões de pessoas ou rodapé que possam ter entrado
+            const cutKeywords = [
+                'Mais perfis para você',
+                'Pessoas que talvez você conheça',
+                'People also viewed',
+                'Sobre\nAcessibilidade'
+            ];
+            for (const kw of cutKeywords) {
+                const kwIdx = text.indexOf(kw);
+                if (kwIdx !== -1) {
+                    text = text.substring(0, kwIdx).trim();
+                }
+            }
+
+            // Normaliza quebras de linha excessivas
+            text = text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+            return text;
+        });
+
+        // Geração do nome do arquivo JSON com timestamp e sufixo único
         const dateObj = new Date();
         const dateStr = String(dateObj.getDate()).padStart(2, '0') + '-' + String(dateObj.getMonth() + 1).padStart(2, '0') + '-' + dateObj.getFullYear();
         const uniqueId = Date.now().toString().slice(-4);
-        const fileName = personName.replace(/\s+/g, '_') + '_' + dateStr + '_' + uniqueId + '.pdf';
+        const fileName = personName.replace(/\s+/g, '_') + '_' + dateStr + '_' + uniqueId + '.json';
 
-        if (!fs.existsSync(downloadFolder)) {
-            fs.mkdirSync(downloadFolder, { recursive: true });
-        }
-
-        // Salva o PDF no disco
-        const filePath = path.join(downloadFolder, fileName);
-        await download.saveAs(filePath);
-        await page.waitForTimeout(500);
-
-        // Extrai texto e salva JSON correspondente
-        await extractAndSaveJson(filePath, {
+        // Salva os dados no disco em dados_json/
+        saveProfileDirectJson({
             personName,
             url,
             dateStr,
-            fileName
+            fileName,
+            experienciaProfissional
         });
 
         return fileName;
@@ -292,10 +387,13 @@ async function scrapeSingleProfile(context, rawUrl) {
  * Executa o scraping de um único perfil isoladamente, iniciando e encerrando o navegador.
  * 
  * @param {string} url - URL ou slug do perfil do LinkedIn
+ * @param {Object} [options] - Opções de execução { headless: boolean }
  * @returns {Promise<string>} Nome do arquivo PDF gerado
  */
-async function scrapeProfile(url) {
-    const browser = await chromium.launch(getLaunchOptions());
+async function scrapeProfile(url, options = {}) {
+    const headless = options.headless !== undefined ? options.headless : true;
+    const browser = await chromium.launch(getLaunchOptions({ headless }));
+
 
     const authPath = AUTH_PATH;
     if (!fs.existsSync(authPath)) {
@@ -323,10 +421,14 @@ async function scrapeProfile(url) {
  * 
  * @param {Array<string>} urls - Lista de URLs a processar
  * @param {Function} [onProgress] - Callback opcional para notificação de progresso
+ * @param {Object} [options] - Opções de execução { headless: boolean, delaySeconds: number }
  * @returns {Promise<Array<Object>>} Lista de resultados por URL
  */
-async function scrapeBatch(urls, onProgress) {
-    const browser = await chromium.launch(getLaunchOptions());
+async function scrapeBatch(urls, onProgress, options = {}) {
+    const headless = options.headless !== undefined ? options.headless : true;
+    const delaySeconds = typeof options.delaySeconds === 'number' && options.delaySeconds >= 0 ? options.delaySeconds : 2;
+    const browser = await chromium.launch(getLaunchOptions({ headless }));
+
 
     const authPath = AUTH_PATH;
     if (!fs.existsSync(authPath)) {
@@ -387,11 +489,10 @@ async function scrapeBatch(urls, onProgress) {
                     });
                 }
             }
-
-            // Pequena pausa preventiva entre requisições consecutivas
-            if (i < urls.length - 1) {
-                console.log('Aguardando 2 segundos antes do próximo perfil...');
-                await new Promise(res => setTimeout(res, 2000));
+            // Pausa preventiva configurável entre requisições consecutivas
+            if (i < urls.length - 1 && delaySeconds > 0) {
+                console.log(`Aguardando ${delaySeconds} segundo(s) antes do próximo perfil...`);
+                await new Promise(res => setTimeout(res, delaySeconds * 1000));
             }
         }
         return results;
@@ -401,4 +502,11 @@ async function scrapeBatch(urls, onProgress) {
     }
 }
 
-module.exports = { normalizeLinkedInUrl, scrapeProfile, scrapeBatch, extractAndSaveJson };
+module.exports = { 
+    normalizeLinkedInUrl, 
+    scrapeProfile, 
+    scrapeBatch, 
+    extractAndSaveJson,
+    extractExperienceFromText,
+    saveProfileDirectJson
+};

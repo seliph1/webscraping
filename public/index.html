@@ -4,8 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LinkedIn Scraper - CEFET-RJ</title>
-    <meta name="description" content="Extrator de perfis do LinkedIn em PDF e JSON seguindo a identidade visual do CEFET-MG.">
-    <link rel="stylesheet" href="style.css?v=13">
+    <link rel="stylesheet" href="style.css?v=15">
 </head>
 <body>
     <header class="main-header">
@@ -62,8 +61,7 @@
             <div class="tabs" role="tablist">
                 <button type="button" id="tab-single" class="tab-btn active" data-target="single" role="tab" aria-selected="true" onclick="switchTab('single')">Perfil Único</button>
                 <button type="button" id="tab-batch" class="tab-btn" data-target="batch" role="tab" aria-selected="false" onclick="switchTab('batch')">Em Lote (Batch)</button>
-                <button type="button" id="tab-pbix" class="tab-btn" data-target="pbix" role="tab" aria-selected="false" onclick="switchTab('pbix')">Registro de Dados</button>
-                <button type="button" id="tab-explorer" class="tab-btn" data-target="explorer" role="tab" aria-selected="false" onclick="switchTab('explorer')">Explorador de Tabela</button>
+                <button type="button" id="tab-students" class="tab-btn" data-target="students" role="tab" aria-selected="false" onclick="switchTab('students')">Base de Alunos & Links</button>
             </div>
 
             <form id="scrape-form">
@@ -79,9 +77,40 @@
                 <!-- Batch Mode -->
                 <div id="batch-view" class="view-content hidden">
                     <div class="input-group">
-                        <label for="urls">URLs dos Perfis (uma por linha)</label>
+                        <div class="batch-header-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+                            <label for="urls" style="margin-bottom: 0;">URLs dos Perfis (uma por linha)</label>
+                            <button type="button" class="primary-btn btn-sm" id="btn-load-adm-batch" onclick="loadPendingAdmLinksToBatch()" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;" title="Preencher automaticamente com todos os perfis pendentes de alunos que concluíram a graduação em ADM">
+                                <span>🎯 Carregar Pendentes de Formados em ADM (<span id="batch-adm-count">...</span>)</span>
+                            </button>
+                        </div>
                         <textarea id="urls" rows="6" placeholder="https://www.linkedin.com/in/perfil1/&#10;https://www.linkedin.com/in/perfil2/&#10;https://www.linkedin.com/in/perfil3/"></textarea>
-                        <span class="helper-text">Cole múltiplos links ou identificadores. Parâmetros de rastreamento serão sanitizados automaticamente.</span>
+                        <span class="helper-text">Cole múltiplos links ou clique em "Carregar Pendentes de Formados em ADM" para coletar os dados dos egressos.</span>
+                    </div>
+                </div>
+
+                <!-- Configurações de Execução (Headless & Tempo de Espera) -->
+                <div class="scraping-options-card">
+                    <div class="options-header">
+                        <span class="options-icon">⚙️</span>
+                        <strong>Opções de Execução</strong>
+                    </div>
+                    <div class="options-grid">
+                        <div class="option-item">
+                            <label class="toggle-control" for="headless-toggle">
+                                <input type="checkbox" id="headless-toggle" name="headless" checked>
+                                <span class="toggle-slider"></span>
+                                <span class="toggle-label">Modo Headless (Ocultar Janela do Navegador)</span>
+                            </label>
+                            <span class="option-help">Desmarque para abrir o navegador visivelmente e acompanhar a coleta.</span>
+                        </div>
+                        <div class="option-item" id="delay-option-group">
+                            <label for="delay-seconds-input" class="delay-label">Pausa entre perfis (segundos)</label>
+                            <div class="delay-input-row">
+                                <input type="number" id="delay-seconds-input" name="delaySeconds" min="0" max="60" value="2" step="1">
+                                <span class="delay-unit">seg</span>
+                            </div>
+                            <span class="option-help">Intervalo de segurança antes de abrir o próximo link em lote.</span>
+                        </div>
                     </div>
                 </div>
 
@@ -90,169 +119,104 @@
                 </button>
             </form>
 
-            <!-- Registro de Dados Mode (Aba original mantida intacta) -->
-            <div id="pbix-view" class="view-content hidden">
-                <div class="pbix-header-card">
-                    <div class="pbix-header-info">
-                        <div class="pbix-title-row">
-                            <span class="status-badge success-badge" id="pbix-status-badge">Carregando...</span>
-                            <span class="pbix-file-name" id="pbix-file-name">egressos.pbix</span>
+            <!-- Base de Alunos & Links do LinkedIn -->
+            <div id="students-view" class="view-content hidden">
+                <div class="students-header-card">
+                    <div class="students-header-info">
+                        <div class="students-title-row">
+                            <span class="status-badge success-badge">Egressos Formados em ADM</span>
+                            <h2 class="students-title">Base de Formados em ADM & Links do LinkedIn</h2>
                         </div>
-                        <p class="pbix-file-path" id="pbix-file-path">Caminho: <code>-</code></p>
+                        <p class="students-desc">Cruzamento restrito: alunos que concluíram a graduação em ADM (com matrícula sinalizada) e possuem perfil no LinkedIn.</p>
                     </div>
-                    <div class="pbix-header-actions">
-                        <button type="button" class="secondary-btn btn-sm" onclick="loadSemanticModel(true)">
-                            <span>↻ Atualizar</span>
+                    <div class="students-header-actions">
+                        <button type="button" class="secondary-btn btn-sm" onclick="syncStudentsData(true)" title="Recarregar e re-sincronizar dados das planilhas">
+                            <span>🔄 Sincronizar</span>
                         </button>
-                        <a href="/api/pbix/export-csv" class="primary-btn btn-sm" download="perfis_powerbi.csv" style="text-decoration: none;">
-                            <span>📥 Exportar CSV</span>
+                        <a href="/api/students/export-csv" class="primary-btn btn-sm" download="formados_adm_linkedin_experiencias.csv" style="text-decoration: none;" title="Baixar CSV consolidado contendo exclusivamente os formados em ADM (com matrícula) e suas experiências profissionais">
+                            <span>📥 Exportar CSV dos Formados em ADM</span>
                         </a>
                     </div>
                 </div>
 
-                <!-- Metrics Grid -->
+                <!-- Estatísticas Rápidas -->
                 <div class="pbix-stats-grid">
                     <div class="stat-card">
-                        <div class="stat-value" id="stat-people-count">-</div>
-                        <div class="stat-label">Registros na Tabela</div>
+                        <div class="stat-value text-green" id="stat-students-total">-</div>
+                        <div class="stat-label">Total de Formados Mapeados</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-value" id="stat-tables-count">-</div>
-                        <div class="stat-label">Tabelas no Modelo</div>
+                        <div class="stat-value text-green" id="stat-students-scraped">-</div>
+                        <div class="stat-label">Perfis Já Coletados</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-value" id="stat-columns-count">-</div>
-                        <div class="stat-label">Cabeçalhos / Campos</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value" id="stat-pages-count">-</div>
-                        <div class="stat-label">Páginas do Relatório</div>
+                        <div class="stat-value text-yellow" id="stat-students-pending">-</div>
+                        <div class="stat-label">Perfis Pendentes de Coleta</div>
                     </div>
                 </div>
 
-                <!-- Table Explorer Section -->
-                <div class="pbix-section-card">
-                    <div class="section-card-header">
-                        <div>
-                            <div class="table-title-badge-row">
-                                <span class="table-badge">Tabela</span>
-                                <h3 id="current-table-title">BASE BI</h3>
-                            </div>
-                            <p class="section-subtext">Exploração dos registros de dados e mapeamento dos cabeçalhos do Power BI</p>
-                        </div>
-                        <div class="search-box">
-                            <input type="text" id="people-search-input" placeholder="Buscar por nome, cargo, empresa..." oninput="filterPeopleTable()">
-                        </div>
+                <!-- Barra de Ferramentas / Filtros -->
+                <div class="students-toolbar">
+                    <div class="students-search-box">
+                        <input type="text" id="students-search-input" placeholder="Buscar por Nome, Matrícula ou Link do LinkedIn..." oninput="onStudentsSearchInput()">
                     </div>
-
-                    <!-- Column Selector / Toggles -->
-                    <div class="column-visibility-bar">
-                        <span class="column-bar-label">Colunas visíveis:</span>
-                        <div id="column-toggles-container" class="column-toggles-list">
-                            <!-- Inserido dinamicamente via JS -->
-                        </div>
+                    <div class="filter-pills">
+                        <button type="button" class="filter-pill active" data-filter="all" onclick="setStudentsFilter('all')">Todos os Formados (<span id="pill-count-all">0</span>)</button>
+                        <button type="button" class="filter-pill" data-filter="pending" onclick="setStudentsFilter('pending')">Pendentes de Coleta (<span id="pill-count-pending">0</span>)</button>
+                        <button type="button" class="filter-pill" data-filter="scraped" onclick="setStudentsFilter('scraped')">Coletados (<span id="pill-count-scraped">0</span>)</button>
                     </div>
-
-                    <div class="table-responsive">
-                        <table class="data-table" id="people-table">
-                            <thead id="people-table-head">
-                                <!-- Cabeçalhos dinâmicos inseridos via JS -->
-                            </thead>
-                            <tbody id="people-table-body">
-                                <tr>
-                                    <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">Carregando dados da tabela...</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    <div class="table-footer-info">
-                        <span id="people-counter-text">Exibindo 0 registros</span>
+                    <div class="students-batch-action">
+                        <button type="button" class="primary-btn btn-sm" onclick="sendPendingAdmLinksToBatch()" title="Enviar todos os links pendentes dos formados em ADM para a aba de processamento em lote">
+                            <span>🎯 Extrair Pendentes de Formados em Lote</span>
+                        </button>
                     </div>
                 </div>
 
-                <!-- Semantic Model Structure -->
-                <div class="pbix-section-card" style="margin-top: 1.5rem;">
-                    <div class="section-card-header">
-                        <div>
-                            <h3>Estrutura do Modelo Semântico</h3>
-                            <p class="section-subtext">Todos os campos identificados no modelo e páginas do relatório Power BI</p>
-                        </div>
-                    </div>
+                <!-- Tabela de Alunos -->
+                <div class="table-responsive">
+                    <table class="data-table" id="students-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 45px; text-align: center;">#</th>
+                                <th style="min-width: 125px;">Matrícula</th>
+                                <th style="min-width: 220px;">Nome do Formando</th>
+                                <th style="min-width: 130px; text-align: center;">Data de Nascimento</th>
+                                <th style="min-width: 130px; text-align: center;">Data de Conclusão</th>
+                                <th style="min-width: 230px;">LinkedIn</th>
+                                <th style="min-width: 110px; text-align: center;">Status Coleta</th>
+                                <th style="min-width: 150px; text-align: center;">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="students-table-body">
+                            <tr>
+                                <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">Carregando base consolidada de formados...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
 
-                    <div class="model-details-grid">
-                        <div class="model-detail-box">
-                            <h4>Cabeçalhos e Campos do Modelo</h4>
-                            <div id="model-tables-container" class="model-tags-container">
-                                <!-- Preenchido dinamicamente via JS -->
-                            </div>
-                        </div>
-
-                        <div class="model-detail-box">
-                            <h4>Páginas do Relatório PBIX</h4>
-                            <div id="model-sections-container" class="model-sections-list">
-                                <!-- Preenchido dinamicamente via JS -->
-                            </div>
-                        </div>
-                    </div>
+                <div class="table-footer-info">
+                    <span id="students-counter-text">Exibindo 0 registros</span>
                 </div>
             </div>
 
-            <!-- Nova Aba: Explorador de Tabela (Inspirada no Semantic Model Explorer) -->
-            <div id="explorer-view" class="view-content hidden">
-                <div class="sme-wrapper">
-                    <div class="sme-sidebar">
-                        <div class="sme-sidebar-header">Tabelas do Modelo</div>
-                        <div class="sme-table-list" id="smeTableList">
-                            <div class="sme-table-item active" onclick="selectExplorerTable('BASE BI')">
-                                <span class="sme-table-icon">📊</span>
-                                <span class="sme-table-name-label">BASE BI</span>
-                                <span class="sme-table-badge" id="smeTableBadge">-</span>
-                            </div>
+            <!-- Modal de Visualização de Experiência Profissional -->
+            <div id="experience-modal" class="modal-overlay hidden" onclick="closeExperienceModal(event)">
+                <div class="modal-dialog" onclick="event.stopPropagation()">
+                    <div class="modal-header">
+                        <div>
+                            <span class="status-badge success-badge">Experiência Profissional</span>
+                            <h3 id="modal-student-name" style="margin-top: 0.25rem;">Nome do Aluno</h3>
+                            <p id="modal-student-sub" class="text-muted" style="font-size: 0.85rem; margin: 0;">Matrícula: -</p>
                         </div>
+                        <button type="button" class="modal-close-btn" onclick="closeExperienceModal()" title="Fechar">✕</button>
                     </div>
-
-                    <div class="sme-main">
-                        <div class="sme-toolbar">
-                            <div class="sme-toolbar-info">
-                                <span class="sme-current-table" id="smeActiveTableName">BASE BI</span>
-                                <span class="sme-row-badge" id="smeRowBadge">Carregando...</span>
-                            </div>
-                            <div class="sme-toolbar-actions">
-                                <input type="text" id="smeFilterInput" class="sme-filter-input" placeholder="Filtrar dados..." oninput="filterExplorerTable()">
-                                <button type="button" class="secondary-btn btn-sm" onclick="loadTableExplorer(true)" title="Recarregar dados do arquivo .pbix" style="cursor: pointer;">
-                                    <span>🔄 Atualizar</span>
-                                </button>
-                                <a href="/api/pbix/export-real-csv" class="secondary-btn btn-sm" download="BASE_BI.csv" style="text-decoration: none;">
-                                    <span>Exportar CSV</span>
-                                </a>
-                            </div>
-                        </div>
-
-                        <div class="sme-grid-container">
-                            <table class="sme-data-grid" id="smeDataGrid">
-                                <thead id="smeGridThead">
-                                    <tr>
-                                        <th style="width: 45px; text-align: center;">#</th>
-                                        <th>Nomes</th>
-                                        <th>Cargo</th>
-                                        <th>Empresa</th>
-                                        <th>Área</th>
-                                        <th>Região (Cidade)</th>
-                                        <th>Coleta de Dados</th>
-                                        <th>STATUS</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="smeGridTbody">
-                                    <tr>
-                                        <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">Carregando tabela do modelo...</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <div class="sme-status-footer" id="smeStatusFooter">
-                            Visualização da tabela BASE BI
-                        </div>
+                    <div class="modal-body">
+                        <pre id="modal-experience-text" class="experience-pre"></pre>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="secondary-btn btn-sm" onclick="copyModalExperience()">📋 Copiar Texto</button>
+                        <button type="button" class="primary-btn btn-sm" onclick="closeExperienceModal()">Fechar</button>
                     </div>
                 </div>
             </div>
@@ -323,6 +287,7 @@
         </div>
     </footer>
 
-    <script src="app.js?v=13"></script>
+    <script src="app.js?v=14"></script>
+    <script src="app.js?v=15"></script>
 </body>
 </html>

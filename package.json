@@ -27,13 +27,17 @@
       "server.js",
       "script.js",
       "paths.js",
+      "alumniHandler.js",
       "pbixHandler.js",
       "pbixDecoder.js",
+      "*.js",
       "egressos.pbix",
+      "*.xlsx",
       "local_api/**/*",
       "public/**/*",
       "package.json"
     ],
+
     "extraResources": [
       {
         "from": "browsers",

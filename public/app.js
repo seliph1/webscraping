@@ -1,48 +1,50 @@
 /**
  * ============================================================================
- * CONTROLADOR FRONTEND - LINKEDIN PROFILE SCRAPER & PBIX EXPLORER
+ * CONTROLADOR FRONTEND - LINKEDIN PROFILE SCRAPER & BASE DE ALUNOS
  * ============================================================================
  * Responsabilidades:
- *  1. Gerenciamento de abas (Perfil Único, Em Lote, Registro de Dados, Explorador de Tabela).
- *  2. Disparo de requisições de scraping individual e em lote (via SSE Stream).
- *  3. Feedback visual dinâmico (barra de progresso, lista de itens da fila).
- *  4. Aba "Registro de Dados": Tabela com filtros, alternância de colunas, download de PDFs
- *     e links diretos para perfis do LinkedIn.
- *  5. Aba "Explorador de Tabela": Visualização em grade tabular completa de todos os
- *     dados reais (todas as 30 colunas e 321 linhas) extraídos de dentro do arquivo .pbix.
+ *  1. Gerenciamento de abas:
+ *     - 'single': Scraping de Perfil Único (com toggle headless)
+ *     - 'batch': Scraping em Lote via SSE Stream (com toggle headless e tempo de pausa)
+ *     - 'students': Base Unificada de Alunos & Links:
+ *       "Matrícula - Nome do Aluno - Data de nascimento - Linkedin",
+ *       status de coleta, visualização/cópia de experiências e exportação CSV.
+ *  2. Disparo de requisições de scraping individual e em lote com opções configuráveis.
+ *  3. Feedback visual em tempo real (barra de progresso, status individual por perfil).
+ *  4. Painel de autenticação LinkedIn integrado (auth.js / auth.json).
  * ============================================================================
  */
 
 (function() {
+    'use strict';
+
     // Estado da interface
     let currentMode = 'single';
     let completedItems = 0;
-    let allTableRows = [];
-    let isModelLoaded = false;
 
-    // Estado do Explorador de Tabela (dados reais do .pbix)
-    let explorerColumns = [];
-    let explorerRows = [];
-    let isExplorerLoaded = false;
+    // Estado da Base de Alunos & Links
+    let allStudents = [];
+    let currentFilter = 'all'; // 'all', 'pending', 'scraped'
+    let currentSearchQuery = '';
+    let isStudentsLoaded = false;
+    let activeModalStudent = null;
+    let authPollingTimer = null;
 
     /**
-     * Definição das colunas disponíveis para a aba "Registro de Dados" (dados coletados).
-     * O usuário pode ativar/desativar cada coluna dinamicamente na interface.
+     * Utilitário para escapar caracteres HTML prevenindo injeção de código (XSS).
      */
-    const availableColumns = [
-        { key: 'Nomes', label: 'Nomes', active: true },
-        { key: 'Cargo', label: 'Cargo', active: true },
-        { key: 'Empresa', label: 'Empresa', active: true },
-        { key: 'Área', label: 'Área', active: true },
-        { key: 'Região (Cidade)', label: 'Região (Cidade)', active: true },
-        { key: 'Coleta de Dados', label: 'Coleta de Dados', active: false },
-        { key: 'STATUS', label: 'STATUS', active: false },
-        { key: 'url', label: 'Perfil LinkedIn', active: true },
-        { key: 'pdfFile', label: 'Documento PDF', active: true }
-    ];
+    function escapeHtml(text) {
+        if (text === null || text === undefined) return '';
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
 
     /**
-     * Extrai um identificador legível e limpo a partir de uma URL do LinkedIn
+     * Extrai um identificador legível a partir de uma URL do LinkedIn
      * para exibição resumida na lista em tempo real do processamento em lote.
      */
     function getCleanIdentifier(rawUrl) {
@@ -62,77 +64,6 @@
     }
 
     /**
-     * Alterna a visualização entre as abas da aplicação:
-     *  - 'single': Scraping de perfil único
-     *  - 'batch': Scraping em lote com progresso SSE
-     *  - 'pbix': Registro de Dados coletados
-     *  - 'explorer': Explorador de Tabela do arquivo .pbix
-     * 
-     * @param {string} mode - Identificador da aba
-     */
-    window.switchTab = function(mode) {
-        currentMode = mode;
-
-        const tabSingle = document.getElementById('tab-single');
-        const tabBatch = document.getElementById('tab-batch');
-        const tabPbix = document.getElementById('tab-pbix');
-        const tabExplorer = document.getElementById('tab-explorer');
-
-        const singleView = document.getElementById('single-view');
-        const batchView = document.getElementById('batch-view');
-        const pbixView = document.getElementById('pbix-view');
-        const explorerView = document.getElementById('explorer-view');
-        const form = document.getElementById('scrape-form');
-
-        // Remove estado ativo de todos os botões de aba
-        [tabSingle, tabBatch, tabPbix, tabExplorer].forEach(function(t) {
-            if (t) {
-                t.classList.remove('active');
-                t.setAttribute('aria-selected', 'false');
-            }
-        });
-
-        // Oculta todas as telas
-        if (singleView) singleView.classList.add('hidden');
-        if (batchView) batchView.classList.add('hidden');
-        if (pbixView) pbixView.classList.add('hidden');
-        if (explorerView) explorerView.classList.add('hidden');
-
-        // Ativa a tela selecionada
-        if (mode === 'single') {
-            if (tabSingle) { tabSingle.classList.add('active'); tabSingle.setAttribute('aria-selected', 'true'); }
-            if (form) form.classList.remove('hidden');
-            if (singleView) singleView.classList.remove('hidden');
-            const urlInput = document.getElementById('url');
-            if (urlInput) urlInput.focus();
-        } else if (mode === 'batch') {
-            if (tabBatch) { tabBatch.classList.add('active'); tabBatch.setAttribute('aria-selected', 'true'); }
-            if (form) form.classList.remove('hidden');
-            if (batchView) batchView.classList.remove('hidden');
-            const urlsTextarea = document.getElementById('urls');
-            if (urlsTextarea) urlsTextarea.focus();
-        } else if (mode === 'pbix') {
-            if (tabPbix) { tabPbix.classList.add('active'); tabPbix.setAttribute('aria-selected', 'true'); }
-            if (form) form.classList.add('hidden');
-            if (pbixView) pbixView.classList.remove('hidden');
-            if (!isModelLoaded) {
-                loadSemanticModel();
-            }
-        } else if (mode === 'explorer') {
-            if (tabExplorer) { tabExplorer.classList.add('active'); tabExplorer.setAttribute('aria-selected', 'true'); }
-            if (form) form.classList.add('hidden');
-            if (explorerView) explorerView.classList.remove('hidden');
-            if (!isExplorerLoaded) {
-                loadTableExplorer();
-            }
-            // Sempre sincroniza com o arquivo mais recente no disco
-            loadTableExplorer(true);
-        }
-
-        hideAllStates();
-    };
-
-    /**
      * Oculta os estados intermediários (loading, sucesso, erro, progresso).
      */
     function hideAllStates() {
@@ -144,6 +75,79 @@
         const tabs = document.querySelector('.tabs');
         if (tabs) tabs.classList.remove('hidden');
     }
+
+    // ========================================================================
+    // GERENCIAMENTO DE ABAS
+    // ========================================================================
+
+    /**
+     * Alterna a visualização entre as abas da aplicação:
+     *  - 'single': Scraping de perfil único
+     *  - 'batch': Scraping em lote com progresso SSE
+     *  - 'students': Base unificada de alunos & links com status de coleta
+     * 
+     * @param {string} mode - Identificador da aba
+     */
+    window.switchTab = function(mode) {
+        currentMode = mode;
+
+        const tabSingle = document.getElementById('tab-single');
+        const tabBatch = document.getElementById('tab-batch');
+        const tabStudents = document.getElementById('tab-students');
+
+        const singleView = document.getElementById('single-view');
+        const batchView = document.getElementById('batch-view');
+        const studentsView = document.getElementById('students-view');
+        const form = document.getElementById('scrape-form');
+        const delayGroup = document.getElementById('delay-option-group');
+
+        // Remove estado ativo de todos os botões de aba
+        [tabSingle, tabBatch, tabStudents].forEach(function(t) {
+            if (t) {
+                t.classList.remove('active');
+                t.setAttribute('aria-selected', 'false');
+            }
+        });
+
+        // Oculta todas as telas
+        if (singleView) singleView.classList.add('hidden');
+        if (batchView) batchView.classList.add('hidden');
+        if (studentsView) studentsView.classList.add('hidden');
+
+        hideAllStates();
+
+        // Ativa a tela selecionada
+        if (mode === 'single') {
+            if (tabSingle) { tabSingle.classList.add('active'); tabSingle.setAttribute('aria-selected', 'true'); }
+            if (form) form.classList.remove('hidden');
+            if (singleView) singleView.classList.remove('hidden');
+            if (delayGroup) delayGroup.style.display = 'none'; // Pausa só faz sentido em lote
+            const urlInput = document.getElementById('url');
+            if (urlInput) urlInput.focus();
+        } else if (mode === 'batch') {
+            if (tabBatch) { tabBatch.classList.add('active'); tabBatch.setAttribute('aria-selected', 'true'); }
+            if (form) form.classList.remove('hidden');
+            if (batchView) batchView.classList.remove('hidden');
+            if (delayGroup) delayGroup.style.display = 'flex';
+            const urlsTextarea = document.getElementById('urls');
+            if (urlsTextarea) urlsTextarea.focus();
+
+            // Atualiza contagem pendente no botão
+            fetch('/api/students/pending-adm-urls').then(r => r.json()).then(data => {
+                if (data.success) {
+                    const el = document.getElementById('batch-adm-count');
+                    if (el) el.textContent = data.pendingCount;
+                }
+            }).catch(() => {});
+        } else if (mode === 'students') {
+            if (tabStudents) { tabStudents.classList.add('active'); tabStudents.setAttribute('aria-selected', 'true'); }
+            if (form) form.classList.add('hidden');
+            if (studentsView) studentsView.classList.remove('hidden');
+            if (!isStudentsLoaded) {
+                window.loadStudentsData();
+            }
+        }
+    };
 
     /**
      * Reseta o formulário de perfil único para novo scraping.
@@ -171,420 +175,320 @@
     };
 
     // ========================================================================
-    // ABA: REGISTRO DE DADOS (DADOS COLETADOS VIA SCRAPING)
+    // ABA: BASE DE ALUNOS & LINKS DO LINKEDIN
     // ========================================================================
 
     /**
-     * Carrega os dados coletados do backend e os metadados do arquivo .pbix.
-     * @param {boolean} [force] - Se verdadeiro, força a recarga ignorando cache
+     * Sincroniza a base de dados com as planilhas e arquivos salvos em disco.
      */
-    window.loadSemanticModel = async function(force) {
-        if (force) isModelLoaded = false;
-
-        const statusBadge = document.getElementById('pbix-status-badge');
-        const fileNameEl = document.getElementById('pbix-file-name');
-        const filePathEl = document.getElementById('pbix-file-path');
-        const tbody = document.getElementById('people-table-body');
-        const currentTableTitle = document.getElementById('current-table-title');
-
-        if (statusBadge) {
-            statusBadge.className = 'status-badge';
-            statusBadge.style.backgroundColor = '#E5E7EB';
-            statusBadge.style.color = '#374151';
-            statusBadge.textContent = 'Carregando...';
-        }
+    window.syncStudentsData = async function() {
+        const tbody = document.getElementById('students-table-body');
         if (tbody) {
-            tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2rem;">Carregando modelo e dados da tabela...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">Sincronizando com o disco e planilhas...</td></tr>';
         }
 
         try {
-            const res = await fetch('/api/pbix/table-data');
-            const tableData = await res.json();
-
-            const modelRes = await fetch('/api/pbix/model');
-            const modelJson = await modelRes.json();
-
-            if (!tableData.success) throw new Error(tableData.error || 'Falha ao carregar dados da tabela.');
-            if (!modelJson.success) throw new Error(modelJson.error || 'Falha ao carregar modelo.');
-
-            const model = modelJson.model;
-            allTableRows = tableData.rows || [];
-            isModelLoaded = true;
-
-            if (currentTableTitle) {
-                currentTableTitle.textContent = tableData.table || 'BASE BI';
-            }
-
-            if (fileNameEl) fileNameEl.textContent = model.fileName;
-            if (filePathEl) filePathEl.innerHTML = 'Caminho configurado: <code>' + model.filePath + '</code> (' + (model.fileSizeFormatted || '-') + ')';
-
-            if (statusBadge) {
-                if (model.exists) {
-                    statusBadge.className = 'status-badge success-badge';
-                    statusBadge.textContent = '✓ Conectado ao PBIX';
-                } else {
-                    statusBadge.className = 'status-badge error-badge';
-                    statusBadge.textContent = '! Arquivo não encontrado';
-                }
-            }
-
-            const statPeople = document.getElementById('stat-people-count');
-            const statTables = document.getElementById('stat-tables-count');
-            const statCols = document.getElementById('stat-columns-count');
-            const statPages = document.getElementById('stat-pages-count');
-
-            if (statPeople) statPeople.textContent = allTableRows.length;
-            if (statTables) statTables.textContent = model.tables ? model.tables.length : 0;
-            if (statCols) statCols.textContent = model.columnsCount || 0;
-            if (statPages) statPages.textContent = model.sectionsCount || 0;
-
-            renderColumnToggles();
-            renderTableData(allTableRows);
-            renderModelDetails(model);
-
-        } catch (err) {
-            console.error('Erro ao carregar dados do registro:', err);
-            if (statusBadge) {
-                statusBadge.className = 'status-badge error-badge';
-                statusBadge.textContent = '! Erro ao carregar';
-            }
-            if (tbody) {
-                tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #DC2626; padding: 2rem;">' + (err.message || 'Erro ao carregar dados.') + '</td></tr>';
-            }
+            await fetch('/api/students/sync', { method: 'POST' });
+        } catch (e) {
+            console.error('Erro ao sincronizar:', e);
         }
+        await window.loadStudentsData(true);
     };
 
     /**
-     * Renderiza os botões tipo chip para alternar visibilidade de colunas.
+     * Carrega a lista consolidada de alunos e links a partir do backend.
+     * @param {boolean} [force=false]
      */
-    function renderColumnToggles() {
-        const container = document.getElementById('column-toggles-container');
-        if (!container) return;
+    window.loadStudentsData = async function(force = false) {
+        if (!force && isStudentsLoaded) return;
 
-        let html = '';
-        availableColumns.forEach(function(col, idx) {
-            const activeClass = col.active ? ' active' : '';
-            html += '<button type="button" class="col-toggle-btn' + activeClass + '" onclick="toggleColumn(' + idx + ')">' +
-                (col.active ? '✓ ' : '+ ') + escapeHtml(col.label) +
-            '</button>';
-        });
-        container.innerHTML = html;
-    }
-
-    /**
-     * Alterna o estado ativo/inativo de uma coluna específica e re-renderiza a tabela.
-     * @param {number} index - Índice da coluna no array availableColumns
-     */
-    window.toggleColumn = function(index) {
-        if (availableColumns[index]) {
-            availableColumns[index].active = !availableColumns[index].active;
-            renderColumnToggles();
-            filterPeopleTable();
-        }
-    };
-
-    /**
-     * Renderiza as linhas e cabeçalhos ativos na tabela da aba Registro de Dados.
-     * @param {Array<Object>} rows - Lista de linhas a exibir
-     */
-    function renderTableData(rows) {
-        const thead = document.getElementById('people-table-head');
-        const tbody = document.getElementById('people-table-body');
-        const counter = document.getElementById('people-counter-text');
-        if (!thead || !tbody) return;
-
-        const activeCols = availableColumns.filter(function(c) { return c.active; });
-
-        let theadHtml = '<tr>';
-        activeCols.forEach(function(col) {
-            const centerStyle = (col.key === 'pdfFile' || col.key === 'STATUS') ? ' style="text-align: center;"' : '';
-            theadHtml += '<th' + centerStyle + '>' + escapeHtml(col.label) + '</th>';
-        });
-        theadHtml += '</tr>';
-        thead.innerHTML = theadHtml;
-
-        if (!rows || rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="' + Math.max(1, activeCols.length) + '" style="text-align: center; color: var(--text-muted); padding: 2rem;">Nenhum registro encontrado com os filtros atuais.</td></tr>';
-            if (counter) counter.textContent = 'Exibindo 0 de ' + allTableRows.length + ' registros | ' + activeCols.length + ' colunas ativas';
-            return;
-        }
-
-        let tbodyHtml = '';
-        rows.forEach(function(r) {
-            tbodyHtml += '<tr>';
-            activeCols.forEach(function(col) {
-                const key = col.key;
-                if (key === 'Nomes') {
-                    tbodyHtml += '<td><strong class="person-name">' + escapeHtml(r['Nomes'] || '-') + '</strong></td>';
-                } else if (key === 'Cargo') {
-                    tbodyHtml += '<td class="person-headline">' + escapeHtml(r['Cargo'] || '-') + '</td>';
-                } else if (key === 'Empresa') {
-                    tbodyHtml += '<td><span class="company-badge">' + escapeHtml(r['Empresa'] || '-') + '</span></td>';
-                } else if (key === 'Área') {
-                    tbodyHtml += '<td><span class="area-badge">' + escapeHtml(r['Área'] || '-') + '</span></td>';
-                } else if (key === 'Região (Cidade)') {
-                    tbodyHtml += '<td class="text-muted">' + escapeHtml(r['Região (Cidade)'] || '-') + '</td>';
-                } else if (key === 'Coleta de Dados') {
-                    tbodyHtml += '<td>' + escapeHtml(r['Coleta de Dados'] || '-') + '</td>';
-                } else if (key === 'STATUS') {
-                    tbodyHtml += '<td style="text-align: center;"><span class="status-pill">' + escapeHtml(r['STATUS'] || 'Analisado') + '</span></td>';
-                } else if (key === 'url') {
-                    let displayUrl = r.url ? r.url.replace(/^https?:\/\/(?:www\.)?/, 'www.') : '';
-                    const link = r.url ?
-                        '<a href="' + escapeHtml(r.url) + '" class="table-link table-link-url" target="_blank" rel="noopener noreferrer" title="' + escapeHtml(r.url) + '">' + escapeHtml(displayUrl) + ' ↗</a>' :
-                        '<span class="text-muted">-</span>';
-                    tbodyHtml += '<td>' + link + '</td>';
-                } else if (key === 'pdfFile') {
-                    const pdfBtn = r.pdfFile ?
-                        '<a href="/downloads/' + encodeURIComponent(r.pdfFile) + '" class="table-action-btn" target="_blank" download title="Baixar ' + r.pdfFile + '">📄 PDF</a>' :
-                        '<span class="text-muted">-</span>';
-                    tbodyHtml += '<td style="text-align: center;">' + pdfBtn + '</td>';
-                } else {
-                    tbodyHtml += '<td>' + escapeHtml(r[key] || '-') + '</td>';
-                }
-            });
-            tbodyHtml += '</tr>';
-        });
-
-        tbody.innerHTML = tbodyHtml;
-        if (counter) {
-            counter.textContent = 'Exibindo ' + rows.length + ' de ' + allTableRows.length + ' registros | ' + activeCols.length + ' colunas visíveis';
-        }
-    }
-
-    /**
-     * Filtra a tabela de pessoas em tempo real a partir do campo de busca.
-     */
-    window.filterPeopleTable = function() {
-        const input = document.getElementById('people-search-input');
-        if (!input) return;
-        const q = input.value.trim().toLowerCase();
-        if (!q) {
-            renderTableData(allTableRows);
-            return;
-        }
-
-        const filtered = allTableRows.filter(function(r) {
-            return Object.keys(r).some(function(k) {
-                const val = r[k];
-                return val && typeof val === 'string' && val.toLowerCase().includes(q);
-            });
-        });
-
-        renderTableData(filtered);
-    };
-
-    /**
-     * Renderiza as informações complementares do modelo (tabelas e páginas visuais).
-     */
-    function renderModelDetails(model) {
-        const tablesContainer = document.getElementById('model-tables-container');
-        const sectionsContainer = document.getElementById('model-sections-container');
-
-        if (tablesContainer) {
-            let html = '';
-            if (model.tables && model.tables.length > 0) {
-                model.tables.forEach(function(t) {
-                    html += '<div class="table-block">' +
-                        '<div class="table-block-title">📊 Tabela: <strong>' + escapeHtml(t) + '</strong> (' + (model.columns ? model.columns.length : 0) + ' campos identificados)</div>' +
-                        '<div class="column-chips">';
-                    
-                    const cols = (model.columns || []).filter(function(c) { return c.table === t; });
-                    cols.forEach(function(c) {
-                        const isPrimary = ['nomes', 'cargo', 'empresa', 'área', 'região (cidade)', 'coleta de dados', 'status'].includes(c.name.toLowerCase());
-                        html += '<span class="col-chip' + (isPrimary ? ' is-primary' : '') + '">' + escapeHtml(c.name) + '</span>';
-                    });
-                    html += '</div></div>';
-                });
-            } else {
-                html = '<p class="text-muted">Nenhuma tabela mapeada no modelo.</p>';
-            }
-            tablesContainer.innerHTML = html;
-        }
-
-        if (sectionsContainer) {
-            let html = '';
-            if (model.sections && model.sections.length > 0) {
-                model.sections.forEach(function(s, idx) {
-                    html += '<div class="section-item">' +
-                        '<span class="section-badge">Página ' + (idx + 1) + '</span>' +
-                        '<div class="section-info">' +
-                            '<strong>' + escapeHtml(s.displayName) + '</strong>' +
-                            '<span class="section-visuals-count">' + s.visualsCount + ' visuais</span>' +
-                        '</div>' +
-                    '</div>';
-                });
-            } else {
-                html = '<p class="text-muted">Nenhuma página de relatório identificada.</p>';
-            }
-            sectionsContainer.innerHTML = html;
-        }
-    }
-
-    // ========================================================================
-    // ABA: EXPLORADOR DE TABELA (DADOS REAIS DO ARQUIVO .PBIX)
-    // ========================================================================
-
-    /**
-     * Carrega a tabela real contida diretamente dentro do .pbix
-     * decodificada pelo endpoint /api/pbix/real-table (VertiPaq/XPress9).
-     * @param {boolean} [force] - Se verdadeiro, força a recarga do backend
-     */
-    window.loadTableExplorer = async function(force) {
-        if (force) isExplorerLoaded = false;
-
-        const tableBadge = document.getElementById('smeTableBadge');
-        const activeTableName = document.getElementById('smeActiveTableName');
-        const rowBadge = document.getElementById('smeRowBadge');
-        const tbody = document.getElementById('smeGridTbody');
-        const footer = document.getElementById('smeStatusFooter');
-
-        if (rowBadge) rowBadge.textContent = 'Carregando dados do .pbix...';
-        if (tbody) {
-            tbody.innerHTML = '<tr><td colspan="15" style="text-align: center; color: var(--text-muted); padding: 2rem;">Carregando todas as linhas e cabeçalhos do arquivo .pbix...</td></tr>';
+        const tbody = document.getElementById('students-table-body');
+        if (tbody && (!allStudents || allStudents.length === 0)) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">Carregando base unificada de alunos...</td></tr>';
         }
 
         try {
-            const res = await fetch('/api/pbix/real-table');
+            const res = await fetch('/api/students/list');
             const data = await res.json();
-            if (!data.success) throw new Error(data.error || 'Falha ao extrair tabela real do .pbix.');
+            if (!data.success) throw new Error(data.error || 'Falha ao carregar dados dos alunos.');
 
-            explorerColumns = data.columns || [];
-            explorerRows = data.rows || [];
-            isExplorerLoaded = true;
+            allStudents = data.students || [];
+            isStudentsLoaded = true;
 
-            const tableName = data.table || 'BASE BI';
-            if (activeTableName) activeTableName.textContent = tableName;
-            if (tableBadge) tableBadge.textContent = explorerRows.length;
-            if (rowBadge) rowBadge.textContent = explorerRows.length + ' linhas • ' + explorerColumns.length + ' cabeçalhos';
-            if (footer) footer.textContent = 'Tabela ' + tableName + ' contendo ' + explorerRows.length + ' linhas e ' + explorerColumns.length + ' cabeçalhos carregados diretamente do arquivo .pbix.';
+            const totalCount = data.total || allStudents.length;
+            const scrapedCount = data.totalScraped !== undefined ? data.totalScraped : allStudents.filter(s => s.scraped).length;
+            const pendingCount = data.totalPending !== undefined ? data.totalPending : (totalCount - scrapedCount);
 
-            renderExplorerGrid(explorerRows);
+            // Atualiza contadores dos cards
+            const statTotal = document.getElementById('stat-students-total');
+            const statScraped = document.getElementById('stat-students-scraped');
+            const statPending = document.getElementById('stat-students-pending');
 
+            if (statTotal) statTotal.textContent = totalCount;
+            if (statScraped) statScraped.textContent = scrapedCount;
+            if (statPending) statPending.textContent = pendingCount;
+
+            // Atualiza contadores das pílulas
+            const pillAll = document.getElementById('pill-count-all');
+            const pillPending = document.getElementById('pill-count-pending');
+            const pillScraped = document.getElementById('pill-count-scraped');
+
+            if (pillAll) pillAll.textContent = totalCount;
+            if (pillPending) pillPending.textContent = pendingCount;
+            if (pillScraped) pillScraped.textContent = scrapedCount;
+
+            // Atualiza contador no botão da aba Em Lote
+            const batchAdmCountEl = document.getElementById('batch-adm-count');
+            if (batchAdmCountEl) batchAdmCountEl.textContent = pendingCount;
+
+            renderStudentsTable();
         } catch (err) {
-            console.error('Erro no Explorador de Tabela:', err);
+            console.error('Erro ao carregar base de formados:', err);
             if (tbody) {
-                tbody.innerHTML = '<tr><td colspan="15" style="text-align: center; color: #DC2626; padding: 2rem;">' + (err.message || 'Erro ao carregar tabela do .pbix.') + '</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #DC2626; padding: 2rem;">' + escapeHtml(err.message || 'Erro ao carregar base de formados.') + '</td></tr>';
             }
-            if (rowBadge) rowBadge.textContent = 'Erro';
         }
     };
 
     /**
-     * Renderiza a grade de dados do Explorador de Tabela contendo dinamicamente
-     * todos os cabeçalhos (30 colunas) e todas as linhas (321 registros).
-     * @param {Array<Object>} rows - Linhas a serem renderizadas
+     * Filtra a tabela em tempo real com base no texto digitado na barra de busca.
      */
-    function renderExplorerGrid(rows) {
-        const thead = document.getElementById('smeGridThead');
-        const tbody = document.getElementById('smeGridTbody');
-        const footer = document.getElementById('smeStatusFooter');
-        if (!thead || !tbody) return;
+    window.onStudentsSearchInput = function() {
+        const input = document.getElementById('students-search-input');
+        currentSearchQuery = input ? input.value.trim().toLowerCase() : '';
+        renderStudentsTable();
+    };
 
-        // Monta os cabeçalhos dinâmicos com TODAS as colunas encontradas no .pbix
-        let theadHtml = '<tr><th style="width: 45px; text-align: center;">#</th>';
-        explorerColumns.forEach(function(col) {
-            theadHtml += '<th>' + escapeHtml(col) + '</th>';
+    /**
+     * Alterna o filtro ativo por pílula (Todos os Formados / Pendentes de Coleta / Coletados).
+     */
+    window.setStudentsFilter = function(filter) {
+        currentFilter = filter;
+        document.querySelectorAll('.filter-pill').forEach(function(pill) {
+            pill.classList.toggle('active', pill.getAttribute('data-filter') === filter);
         });
-        theadHtml += '</tr>';
-        thead.innerHTML = theadHtml;
+        renderStudentsTable();
+    };
 
-        if (!rows || rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="' + (explorerColumns.length + 1) + '" style="text-align: center; color: var(--text-muted); padding: 2rem;">Nenhuma linha encontrada para o filtro.</td></tr>';
-            if (footer) footer.textContent = 'Exibindo 0 de ' + explorerRows.length + ' linhas';
+    /**
+     * Retorna a lista de formados filtrada com base nos critérios ativos.
+     */
+    function getFilteredStudents() {
+        return allStudents.filter(function(st) {
+            if (currentFilter === 'pending' && st.scraped) return false;
+            if (currentFilter === 'scraped' && !st.scraped) return false;
+
+            if (currentSearchQuery) {
+                const normName = (st.nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+                const matr = (st.matricula || '').toLowerCase();
+                const lk = (st.linkedin || '').toLowerCase();
+                if (!normName.includes(currentSearchQuery) && !matr.includes(currentSearchQuery) && !lk.includes(currentSearchQuery)) {
+                    return false;
+                }
+            }
+            return true;
+        });
+    }
+
+    /**
+     * Renderiza as linhas da tabela de formados.
+     */
+    function renderStudentsTable() {
+        const tbody = document.getElementById('students-table-body');
+        const counter = document.getElementById('students-counter-text');
+        if (!tbody) return;
+
+        const filtered = getFilteredStudents();
+
+        if (counter) {
+            counter.textContent = 'Exibindo ' + filtered.length + ' de ' + allStudents.length + ' formados em ADM';
+        }
+
+        if (filtered.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">Nenhum formando encontrado para os critérios selecionados.</td></tr>';
             return;
         }
 
         let html = '';
-        rows.forEach(function(r, idx) {
-            html += '<tr><td class="sme-cell-idx">' + (idx + 1) + '</td>';
-            explorerColumns.forEach(function(col) {
-                const val = r[col];
-                if (val === null || val === undefined || val === '') {
-                    html += '<td class="text-muted">-</td>';
-                } else if (col === 'Nomes') {
-                    html += '<td class="sme-cell-name">' + escapeHtml(val) + '</td>';
-                } else if (col === 'LinkedIn' && typeof val === 'string' && val.includes('linkedin.com')) {
-                    let url = val.trim();
-                    if (!url.startsWith('http')) url = 'https://' + url;
-                    html += '<td><a href="' + escapeHtml(url) + '" class="table-link" target="_blank" rel="noopener noreferrer">Acessar Perfil ↗</a></td>';
-                } else if (col === 'STATUS') {
-                    html += '<td style="text-align: center;"><span class="sme-badge-status">' + escapeHtml(val) + '</span></td>';
-                } else {
-                    html += '<td>' + escapeHtml(val) + '</td>';
+        filtered.forEach(function(st, idx) {
+            const statusBadge = st.scraped ?
+                '<span class="badge-scraped">✓ Coletado</span>' :
+                '<span class="badge-pending">Pendente</span>';
+
+            let actionsHtml = '';
+            if (st.scraped) {
+                actionsHtml = '<div style="display: flex; gap: 0.35rem; justify-content: center;">';
+                if (st.experienciaProfissional) {
+                    actionsHtml += '<button type="button" class="secondary-btn btn-sm" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;" onclick="openExperienceModal(' + st.id + ')" title="Ver experiências extraídas">📄 Experiência</button>';
                 }
-            });
-            html += '</tr>';
+                if (st.pdfFile) {
+                    actionsHtml += '<a href="/downloads/' + encodeURIComponent(st.pdfFile) + '" class="table-action-btn" target="_blank" download title="Baixar PDF original" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;">⬇ PDF</a>';
+                }
+                actionsHtml += '</div>';
+            } else {
+                actionsHtml = '<button type="button" class="primary-btn btn-sm" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;" onclick="scrapeSingleFromTable(\'' + escapeHtml(st.linkedin) + '\')" title="Realizar coleta deste perfil agora">⚡ Coletar</button>';
+            }
+
+            const lkShort = st.linkedin ? st.linkedin.replace(/^https?:\/\/(?:www.)?/, '') : '-';
+            const lkLink = st.linkedin ?
+                '<a href="' + escapeHtml(st.linkedin) + '" target="_blank" rel="noopener noreferrer" class="table-link table-link-url" title="' + escapeHtml(st.linkedin) + '">' + escapeHtml(lkShort) + ' ↗</a>' :
+                '-';
+
+            html += '<tr>' +
+                '<td style="text-align: center; color: var(--text-muted); font-size: 0.75rem;">' + (idx + 1) + '</td>' +
+                '<td><code style="font-weight: 600; color: #1E293B;">' + escapeHtml(st.matricula || '-') + '</code></td>' +
+                '<td><strong class="person-name">' + escapeHtml(st.nome) + '</strong></td>' +
+                '<td style="text-align: center;">' + (st.dt_nascimento ? escapeHtml(st.dt_nascimento) : '<span class="text-muted">-</span>') + '</td>' +
+                '<td style="text-align: center; color: #0284C7; font-weight: 500;">' + (st.dt_conclusao ? escapeHtml(st.dt_conclusao) : '<span class="text-muted">-</span>') + '</td>' +
+                '<td>' + lkLink + '</td>' +
+                '<td style="text-align: center;">' + statusBadge + '</td>' +
+                '<td style="text-align: center;">' + actionsHtml + '</td>' +
+            '</tr>';
         });
 
         tbody.innerHTML = html;
-        if (footer) {
-            footer.textContent = 'Exibindo ' + rows.length + ' de ' + explorerRows.length + ' linhas da tabela BASE BI (' + explorerColumns.length + ' cabeçalhos extraídos do .pbix)';
-        }
     }
 
     /**
-     * Filtra a tabela do explorador em tempo real por qualquer texto presente em qualquer coluna.
+     * Carrega diretamente na caixa de texto da aba Em Lote os links pendentes de Formados em ADM.
      */
-    window.filterExplorerTable = function() {
-        const input = document.getElementById('smeFilterInput');
-        if (!input) return;
-        const q = input.value.trim().toLowerCase();
-        if (!q) {
-            renderExplorerGrid(explorerRows);
+    window.loadPendingAdmLinksToBatch = async function() {
+        const btn = document.getElementById('btn-load-adm-batch');
+        if (btn) btn.disabled = true;
+        try {
+            let pendingUrls = [];
+
+            // Tenta obter via endpoint dedicado
+            try {
+                const res = await fetch('/api/students/pending-adm-urls');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success && Array.isArray(data.urls)) {
+                        pendingUrls = data.urls;
+                    }
+                }
+            } catch (errRoute) {}
+
+            // Fallback resiliente caso o servidor ainda não tenha sido reiniciado
+            if (pendingUrls.length === 0) {
+                if (!allStudents || allStudents.length === 0) {
+                    const res = await fetch('/api/students/list');
+                    const data = await res.json();
+                    if (data.success && data.students) {
+                        allStudents = data.students;
+                    }
+                }
+                pendingUrls = (allStudents || [])
+                    .filter(function(st) { return !st.scraped && st.linkedin; })
+                    .map(function(st) { return st.linkedin; });
+            }
+
+            if (pendingUrls.length > 0) {
+                const urlsTextarea = document.getElementById('urls');
+                if (urlsTextarea) {
+                    urlsTextarea.value = pendingUrls.join('\n');
+                }
+                alert(pendingUrls.length + ' perfis de Formados em ADM pendentes de coleta foram carregados na lista!');
+            } else {
+                alert('Não há perfis de Formados em ADM pendentes de coleta.');
+            }
+        } catch (e) {
+            console.error('Erro ao carregar URLs pendentes:', e);
+            alert('Erro ao carregar links pendentes: ' + e.message);
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    };
+
+    /**
+     * Envia todos os links pendentes exclusivamente de Formados em ADM para a aba "Em Lote".
+     */
+    window.sendPendingAdmLinksToBatch = function() {
+        const pendingAdm = allStudents.filter(function(st) { 
+            return !st.scraped && st.linkedin; 
+        });
+        if (pendingAdm.length === 0) {
+            alert('Não há perfis de Formados em ADM pendentes de coleta!');
             return;
         }
 
-        const filtered = explorerRows.filter(function(r) {
-            return explorerColumns.some(function(col) {
-                const val = r[col];
-                return val && String(val).toLowerCase().includes(q);
-            });
-        });
-
-        renderExplorerGrid(filtered);
-    };
-
-    /**
-     * Permite selecionar uma tabela na barra lateral do explorador.
-     */
-    window.selectExplorerTable = function(tableName) {
-        loadTableExplorer(true);
-    };
-
-    /**
-     * Função auxiliar de escape HTML para proteção contra injeção de código (XSS).
-     */
-    function escapeHtml(str) {
-        if (!str) return '';
-        return String(str)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
-    }
-
-    // ========================================================================
-    // PROCESSAMENTO DE FORMULÁRIO (SCRAPING ÚNICO E EM LOTE)
-    // ========================================================================
-
-    document.addEventListener('DOMContentLoaded', function() {
-        // Inicializa a verificação de sessão do LinkedIn no carregamento
-        if (typeof window.checkLinkedInAuth === 'function') {
-            window.checkLinkedInAuth(false);
+        const urls = pendingAdm.map(function(st) { return st.linkedin; });
+        const urlsTextarea = document.getElementById('urls');
+        if (urlsTextarea) {
+            urlsTextarea.value = urls.join('\n');
         }
 
-        const form = document.getElementById('scrape-form');
-        if (!form) return;
-        form.addEventListener('submit', async function(e) {
-            e.preventDefault();
-            if (currentMode === 'single') {
-                await handleSingleScrape();
-            } else if (currentMode === 'batch') {
-                await handleBatchScrapeStream();
-            }
+        window.switchTab('batch');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    // Mantém compatibilidade com chamada legada
+    window.sendPendingLinksToBatch = window.sendPendingAdmLinksToBatch;
+
+    /**
+     * Preenche a URL na aba Perfil Único e navega para ela.
+     */
+    window.scrapeSingleFromTable = function(linkedinUrl) {
+        if (!linkedinUrl) return;
+        const urlInput = document.getElementById('url');
+        if (urlInput) {
+            urlInput.value = linkedinUrl;
+        }
+        window.switchTab('single');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    /**
+     * Abre a modal com a Experiência Profissional completa extraída do perfil.
+     */
+    window.openExperienceModal = function(studentId) {
+        const student = allStudents.find(function(s) { return s.id === studentId; });
+        if (!student) return;
+
+        activeModalStudent = student;
+        const modal = document.getElementById('experience-modal');
+        const nameEl = document.getElementById('modal-student-name');
+        const subEl = document.getElementById('modal-student-sub');
+        const preEl = document.getElementById('modal-experience-text');
+
+        if (nameEl) nameEl.textContent = student.nome;
+        if (subEl) {
+            subEl.textContent = (student.matricula ? ('Matrícula: ' + student.matricula + ' | ') : '') +
+                                (student.dt_nascimento ? ('Nascimento: ' + student.dt_nascimento + ' | ') : '') +
+                                student.linkedin;
+        }
+        if (preEl) {
+            preEl.textContent = student.experienciaProfissional || '(Nenhuma experiência extraída para este perfil)';
+        }
+
+        if (modal) modal.classList.remove('hidden');
+    };
+
+    /**
+     * Fecha a modal de experiência.
+     */
+    window.closeExperienceModal = function(e) {
+        if (e && e.target && e.target.id !== 'experience-modal') return;
+        const modal = document.getElementById('experience-modal');
+        if (modal) modal.classList.add('hidden');
+        activeModalStudent = null;
+    };
+
+    /**
+     * Copia o texto da experiência para a área de transferência.
+     */
+    window.copyModalExperience = function() {
+        if (!activeModalStudent || !activeModalStudent.experienciaProfissional) return;
+        navigator.clipboard.writeText(activeModalStudent.experienciaProfissional).then(function() {
+            alert('Experiência copiada para a área de transferência com sucesso!');
+        }).catch(function() {
+            alert('Não foi possível copiar automaticamente para a área de transferência.');
         });
-    });
+    };
+
+    // ========================================================================
+    // PROCESSAMENTO DE SCRAPING (SINGLE & BATCH COM HEADLESS & PAUSA)
+    // ========================================================================
 
     /**
      * Executa a requisição de scraping para um único perfil.
@@ -604,6 +508,9 @@
         const url = urlInput ? urlInput.value.trim() : '';
         if (!url) return;
 
+        const headlessToggle = document.getElementById('headless-toggle');
+        const isHeadless = headlessToggle ? headlessToggle.checked : true;
+
         if (tabs) tabs.classList.add('hidden');
         if (form) form.classList.add('hidden');
         if (errorState) errorState.classList.add('hidden');
@@ -613,7 +520,10 @@
             const response = await fetch('/api/scrape', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: url })
+                body: JSON.stringify({ 
+                    url: url,
+                    headless: isHeadless
+                })
             });
 
             const data = await response.json();
@@ -627,7 +537,7 @@
                 }
                 if (singleDownload) singleDownload.classList.remove('hidden');
                 if (successState) successState.classList.remove('hidden');
-                isModelLoaded = false;
+                isStudentsLoaded = false; // Invalida cache para refletir coleta na tabela
             } else {
                 throw new Error(data.error || 'Ocorreu um erro no processamento.');
             }
@@ -648,7 +558,6 @@
         const form = document.getElementById('scrape-form');
         const progressState = document.getElementById('progress-state');
         const errorState = document.getElementById('error-state');
-        const errorMessage = document.getElementById('error-message');
         const batchActions = document.getElementById('batch-actions');
         const realtimeList = document.getElementById('realtime-list');
         const tabs = document.querySelector('.tabs');
@@ -657,10 +566,16 @@
         const urls = rawUrls.map(function(u) { return u.trim(); }).filter(function(u) { return u.length > 0; });
         if (urls.length === 0) return;
 
+        const headlessToggle = document.getElementById('headless-toggle');
+        const isHeadless = headlessToggle ? headlessToggle.checked : true;
+
+        const delayInput = document.getElementById('delay-seconds-input');
+        const delaySec = delayInput ? (parseInt(delayInput.value, 10) || 2) : 2;
+
         if (tabs) tabs.classList.add('hidden');
         if (form) form.classList.add('hidden');
         if (errorState) errorState.classList.add('hidden');
-        if (batchActions) batchActions.classList.add('hidden');
+        if (batchActions) batchActions.classList.remove('hidden');
         if (progressState) progressState.classList.remove('hidden');
 
         const total = urls.length;
@@ -690,7 +605,11 @@
             const response = await fetch('/api/scrape-batch-stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ urls: urls })
+                body: JSON.stringify({ 
+                    urls: urls,
+                    headless: isHeadless,
+                    delaySeconds: delaySec
+                })
             });
 
             if (!response.ok) {
@@ -726,6 +645,8 @@
                 }
             }
 
+            isStudentsLoaded = false; // Invalida cache de alunos após conclusão do lote
+
         } catch (error) {
             const errorStateEr = document.getElementById('error-state');
             const errorMsgEr = document.getElementById('error-message');
@@ -747,7 +668,6 @@
             const index = event.index;
             const status = event.status;
             const fileName = event.fileName;
-            const downloadUrl = event.downloadUrl;
             const error = event.error;
 
             const li = document.getElementById('item-' + index);
@@ -763,23 +683,21 @@
                 dot.className = 'status-dot dot-yellow pulse';
                 action.innerHTML = '<span class="item-status-text processing">Processando...</span>';
             } else if (status === 'success') {
+                completedItems++;
+                updateProgressBar(completedItems, total);
                 li.className = 'realtime-item is-success';
                 dot.className = 'status-dot dot-green';
-                const dlUrl = downloadUrl || ('/downloads/' + fileName);
-                action.innerHTML = 
-                    '<span class="item-status-text success">' +
-                        '<a href="' + dlUrl + '" download="' + fileName + '" title="Baixar ' + fileName + '">Baixar PDF</a>' +
-                    '</span>';
-                updateProgressCounter(total);
-                isModelLoaded = false;
+                const downloadUrl = '/downloads/' + encodeURIComponent(fileName);
+                action.innerHTML = '<span class="item-status-text success"><a href="' + downloadUrl + '" download="' + escapeHtml(fileName) + '" title="Baixar PDF">⬇ ' + escapeHtml(fileName) + '</a></span>';
             } else if (status === 'failed') {
+                completedItems++;
+                updateProgressBar(completedItems, total);
                 li.className = 'realtime-item is-failed';
                 dot.className = 'status-dot dot-red';
-                const shortErr = error ? (error.length > 25 ? error.substring(0, 22) + '...' : error) : 'Falhou';
-                const safeErr = escapeHtml(error || '');
-                action.innerHTML = '<span class="item-status-text failed" title="' + safeErr + '">' + shortErr + '</span>';
-                updateProgressCounter(total);
+                const displayErr = error ? (error.length > 30 ? (error.substring(0, 30) + '...') : error) : 'Erro';
+                action.innerHTML = '<span class="item-status-text failed" title="' + escapeHtml(error) + '">' + escapeHtml(displayErr) + '</span>';
             }
+
         } else if (event.type === 'complete') {
             updateProgressBar(total, total);
             const batchActions = document.getElementById('batch-actions');
@@ -789,17 +707,17 @@
             const failCount = event.failCount || 0;
             const progressHeader = document.querySelector('.progress-header h3');
             if (progressHeader) {
-                progressHeader.textContent = 'Lote Finalizado (' + successCount + ' salvos, ' + failCount + ' pulados)';
+                progressHeader.textContent = 'Lote Finalizado: ' + successCount + ' salvos, ' + failCount + ' falhas';
             }
-        }
-    }
 
-    /**
-     * Incrementa o contador de progresso de perfis processados.
-     */
-    function updateProgressCounter(total) {
-        completedItems++;
-        updateProgressBar(completedItems, total);
+        } else if (event.type === 'fatal_error') {
+            const errorState = document.getElementById('error-state');
+            const errorMessage = document.getElementById('error-message');
+            const batchActions = document.getElementById('batch-actions');
+            if (errorMessage) errorMessage.textContent = event.error || 'Erro fatal durante o processamento em lote.';
+            if (errorState) errorState.classList.remove('hidden');
+            if (batchActions) batchActions.classList.remove('hidden');
+        }
     }
 
     /**
@@ -817,9 +735,8 @@
     }
 
     // ========================================================================
-    // GESTÃO DE AUTENTICAÇÃO LINKEDIN (auth.js & VERIFICAÇÃO)
+    // GESTÃO DA SESSÃO LINKEDIN (auth.js & VERIFICAÇÃO)
     // ========================================================================
-    let authPollingTimer = null;
 
     /**
      * Atualiza os elementos visuais do status de autenticação.
@@ -896,9 +813,9 @@
                     if (data.warning) {
                         updateAuthUi('warning', 'Válido Local', data.reason);
                     } else {
-                        const userText = data.userName ? ` (${data.userName})` : '';
-                        const expText = data.fileInfo && data.fileInfo.expiresAt ? ` - Expira em ${data.fileInfo.expiresAt}` : '';
-                        updateAuthUi('authenticated', 'Autenticado', `Sessão ativa e confirmada no LinkedIn${userText}${expText}.`);
+                        const userText = data.userName ? (' (' + data.userName + ')') : '';
+                        const expText = data.fileInfo && data.fileInfo.expiresAt ? (' - Expira em ' + data.fileInfo.expiresAt) : '';
+                        updateAuthUi('authenticated', 'Autenticado', 'Sessão ativa e confirmada no LinkedIn' + userText + expText + '.');
                     }
                 } else {
                     updateAuthUi('unauthenticated', 'Não Autenticado', data.reason || 'Sessão inválida ou expirada no LinkedIn.');
@@ -915,9 +832,9 @@
                 }
 
                 if (data.valid && !data.isExpired) {
-                    updateAuthUi('authenticated', 'Autenticado (Local)', `Arquivo auth.json válido (expira em ${data.expiresAt || 'data futura'}). Clique em "Verificar Sessão" para validar ao vivo.`);
+                    updateAuthUi('authenticated', 'Autenticado (Local)', 'Arquivo auth.json válido (expira em ' + (data.expiresAt || 'data futura') + '). Clique em "Verificar Sessão" para validar ao vivo.');
                 } else if (data.exists && data.isExpired) {
-                    updateAuthUi('unauthenticated', 'Sessão Expirada', `A sessão em auth.json expirou em ${data.expiresAt}. Clique em "Executar auth.js" para renovar.`);
+                    updateAuthUi('unauthenticated', 'Sessão Expirada', 'A sessão em auth.json expirou em ' + data.expiresAt + '. Clique em "Executar auth.js" para renovar.');
                 } else if (data.exists && !data.hasLiAt) {
                     updateAuthUi('unauthenticated', 'auth.json Incompleto', 'O cookie de login li_at não foi encontrado em auth.json. Clique em "Executar auth.js".');
                 } else {
@@ -983,8 +900,7 @@
      */
     window.saveLinkedInAuthNow = async function() {
         try {
-            const resp = await fetch('/api/auth/save', { method: 'POST' });
-            const data = await resp.json();
+            await fetch('/api/auth/save', { method: 'POST' });
             if (authPollingTimer) clearInterval(authPollingTimer);
             setAuthRunningUi(false);
             setTimeout(() => {
@@ -1008,4 +924,41 @@
             console.error('Erro ao cancelar:', err);
         }
     };
+
+    // ========================================================================
+    // INICIALIZAÇÃO NO DOM READY
+    // ========================================================================
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Inicializa a verificação de sessão do LinkedIn no carregamento
+        window.checkLinkedInAuth(false);
+
+        // Configuração inicial de visibilidade da opção de delay
+        const delayGroup = document.getElementById('delay-option-group');
+        if (delayGroup) {
+            delayGroup.style.display = (currentMode === 'batch') ? 'flex' : 'none';
+        }
+
+        // Atualiza contagem inicial de alunos de ADM pendentes para o botão da aba Em Lote
+        fetch('/api/students/pending-adm-urls').then(r => r.json()).then(data => {
+            if (data.success) {
+                const el = document.getElementById('batch-adm-count');
+                if (el) el.textContent = data.pendingCount;
+            }
+        }).catch(() => {});
+
+        // Listener do formulário unificado
+        const form = document.getElementById('scrape-form');
+        if (form) {
+            form.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                if (currentMode === 'single') {
+                    await handleSingleScrape();
+                } else if (currentMode === 'batch') {
+                    await handleBatchScrapeStream();
+                }
+            });
+        }
+    });
+
 })();

@@ -8,3 +8,5 @@ perfis_linkedin.csv
 .DS_Store
 *.log
 browsers/
+*.xlsx
+*.csv

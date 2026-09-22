@@ -1,3 +1,6 @@
+// Remove flag que forçaria processos filhos ou Playwright a rodarem como Node puro
+delete process.env.ELECTRON_RUN_AS_NODE;
+
 const { app, BrowserWindow, dialog } = require('electron');
 const path = require('path');
 const http = require('http');
